@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <rect width="96" height="96" rx="20" fill="#0f172a"/>
+  <rect x="20" y="32" width="56" height="34" rx="6" fill="#1e293b" stroke="#00f0ff" stroke-width="2"/>
+  <circle cx="32" cy="49" r="3" fill="#10b981"/>
+  <circle cx="44" cy="49" r="3" fill="#00f0ff"/>
+  <circle cx="56" cy="49" r="3" fill="#00f0ff"/>
+  <circle cx="68" cy="49" r="3" fill="#f59e0b"/>
+  <path d="M48 22v10" stroke="#00f0ff" stroke-width="3" stroke-linecap="round"/>
+  <text x="48" y="82" text-anchor="middle" fill="#38bdf8" font-size="10" font-family="sans-serif" font-weight="bold">CUSTOMER CPE</text>
+</svg>

@@ -1,214 +1,225 @@
 @extends('layouts.app')
 
 @section('content')
-<div x-data="{ 
-    incidentModal: false, 
-    capacityModal: false,
-    newCapacityMbps: {{ $capacityMetrics['total_capacity_mbps'] }},
-    autoRefresh: true,
-    pollingInterval: null,
-    isRefreshing: false,
-    isBursting: false,
-    contentionMultiplier: 4,
-    aiQuery: '', 
-    aiResponse: '', 
-    aiLoading: false,
-    metrics: @json($capacityMetrics),
-    chartInstance: null,
+<script>
+function nocDashboard() {
+    return { 
+        incidentModal: false, 
+        capacityModal: false,
+        newCapacityMbps: {{ (int) ($capacityMetrics['total_capacity_mbps'] ?? 0) }},
+        autoRefresh: true,
+        pollingInterval: null,
+        isRefreshing: false,
+        isBursting: false,
+        contentionMultiplier: 4,
+        aiQuery: '', 
+        aiResponse: '', 
+        aiLoading: false,
+        metrics: @json($capacityMetrics),
+        chartInstance: null,
 
-    init() {
-        this.$nextTick(() => {
-            this.initThroughputChart();
-            this.startPolling();
-        });
-    },
+        init() {
+            this.$nextTick(() => {
+                this.initThroughputChart();
+                this.startPolling();
+            });
+        },
 
-    startPolling() {
-        if (this.pollingInterval) clearInterval(this.pollingInterval);
-        this.pollingInterval = setInterval(() => {
-            if (this.autoRefresh && !this.isBursting) {
+        startPolling() {
+            if (this.pollingInterval) clearInterval(this.pollingInterval);
+            this.pollingInterval = setInterval(() => {
+                if (this.autoRefresh && !this.isBursting) {
+                    this.pollTelemetry();
+                }
+            }, 3000);
+        },
+
+        stopPolling() {
+            if (this.pollingInterval) {
+                clearInterval(this.pollingInterval);
+                this.pollingInterval = null;
+            }
+        },
+
+        toggleAutoRefresh() {
+            this.autoRefresh = !this.autoRefresh;
+            if (this.autoRefresh) {
+                this.startPolling();
+            } else {
+                this.stopPolling();
+            }
+        },
+
+        pollTelemetry() {
+            this.isRefreshing = true;
+            fetch('{{ route('noc.capacity.telemetry') }}')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.metrics) {
+                        this.metrics = data.metrics;
+                        this.updateChart(data.metrics);
+                    }
+                    this.isRefreshing = false;
+                })
+                .catch(err => {
+                    console.error('Error polling capacity telemetry:', err);
+                    this.isRefreshing = false;
+                });
+        },
+
+        simulatePeakBurst() {
+            this.isBursting = !this.isBursting;
+            if (this.isBursting) {
+                // Simulate peak evening load surge (+45% traffic pull)
+                const surgeFactor = 1.48;
+                this.metrics.pulled_rx_mbps = Math.round(this.metrics.pulled_rx_mbps * surgeFactor * 10) / 10;
+                this.metrics.pulled_tx_mbps = Math.round(this.metrics.pulled_tx_mbps * 1.35 * 10) / 10;
+                this.metrics.pulled_total_mbps = Math.round((this.metrics.pulled_rx_mbps + this.metrics.pulled_tx_mbps) * 10) / 10;
+                this.metrics.pulled_rx_formatted = this.metrics.pulled_rx_mbps >= 1000 ? (this.metrics.pulled_rx_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_rx_mbps + ' Mbps';
+                this.metrics.pulled_tx_formatted = this.metrics.pulled_tx_mbps >= 1000 ? (this.metrics.pulled_tx_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_tx_mbps + ' Mbps';
+                this.metrics.pulled_total_formatted = this.metrics.pulled_total_mbps >= 1000 ? (this.metrics.pulled_total_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_total_mbps + ' Mbps';
+                this.metrics.pulled_utilization_pct = Math.min(100, Math.round((this.metrics.pulled_rx_mbps / this.metrics.total_capacity_mbps) * 1000) / 10);
+                
+                // Add surge point to chart history
+                const now = new Date();
+                const timeStr = now.toTimeString().split(' ')[0];
+                if (this.chartInstance) {
+                    this.chartInstance.data.labels.push(timeStr);
+                    this.chartInstance.data.labels.shift();
+                    this.chartInstance.data.datasets[0].data.push(this.metrics.pulled_rx_mbps);
+                    this.chartInstance.data.datasets[0].data.shift();
+                    this.chartInstance.data.datasets[1].data.push(this.metrics.pulled_tx_mbps);
+                    this.chartInstance.data.datasets[1].data.shift();
+                    this.chartInstance.update();
+                }
+            } else {
                 this.pollTelemetry();
             }
-        }, 3000);
-    },
+        },
 
-    stopPolling() {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
-        }
-    },
+        calculateCustomSlots(speedMbps) {
+            if (!speedMbps) return 0;
+            const remaining = this.metrics.remaining_capacity_mbps || 0;
+            return Math.floor((remaining * this.contentionMultiplier) / speedMbps);
+        },
 
-    toggleAutoRefresh() {
-        this.autoRefresh = !this.autoRefresh;
-        if (this.autoRefresh) {
-            this.startPolling();
-        } else {
-            this.stopPolling();
-        }
-    },
-
-    pollTelemetry() {
-        this.isRefreshing = true;
-        fetch('{{ route('noc.capacity.telemetry') }}')
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.metrics) {
-                    this.metrics = data.metrics;
-                    this.updateChart(data.metrics);
-                }
-                this.isRefreshing = false;
-            })
-            .catch(err => {
-                console.error('Error polling capacity telemetry:', err);
-                this.isRefreshing = false;
-            });
-    },
-
-    simulatePeakBurst() {
-        this.isBursting = !this.isBursting;
-        if (this.isBursting) {
-            // Simulate peak evening load surge (+45% traffic pull)
-            const surgeFactor = 1.48;
-            this.metrics.pulled_rx_mbps = Math.round(this.metrics.pulled_rx_mbps * surgeFactor * 10) / 10;
-            this.metrics.pulled_tx_mbps = Math.round(this.metrics.pulled_tx_mbps * 1.35 * 10) / 10;
-            this.metrics.pulled_total_mbps = Math.round((this.metrics.pulled_rx_mbps + this.metrics.pulled_tx_mbps) * 10) / 10;
-            this.metrics.pulled_rx_formatted = this.metrics.pulled_rx_mbps >= 1000 ? (this.metrics.pulled_rx_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_rx_mbps + ' Mbps';
-            this.metrics.pulled_tx_formatted = this.metrics.pulled_tx_mbps >= 1000 ? (this.metrics.pulled_tx_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_tx_mbps + ' Mbps';
-            this.metrics.pulled_total_formatted = this.metrics.pulled_total_mbps >= 1000 ? (this.metrics.pulled_total_mbps / 1000).toFixed(2) + ' Gbps' : this.metrics.pulled_total_mbps + ' Mbps';
-            this.metrics.pulled_utilization_pct = Math.min(100, Math.round((this.metrics.pulled_rx_mbps / this.metrics.total_capacity_mbps) * 1000) / 10);
+        initThroughputChart() {
+            const ctx = document.getElementById('nocLiveThroughputChart')?.getContext('2d');
+            if (!ctx) return;
             
-            // Add surge point to chart history
-            const now = new Date();
-            const timeStr = now.toTimeString().split(' ')[0];
-            if (this.chartInstance) {
-                this.chartInstance.data.labels.push(timeStr);
-                this.chartInstance.data.labels.shift();
-                this.chartInstance.data.datasets[0].data.push(this.metrics.pulled_rx_mbps);
-                this.chartInstance.data.datasets[0].data.shift();
-                this.chartInstance.data.datasets[1].data.push(this.metrics.pulled_tx_mbps);
-                this.chartInstance.data.datasets[1].data.shift();
-                this.chartInstance.update();
-            }
-        } else {
-            this.pollTelemetry();
-        }
-    },
+            const history = this.metrics.live_history || [];
+            const labels = history.map(h => h.time);
+            const rxData = history.map(h => h.rx);
+            const txData = history.map(h => h.tx);
 
-    calculateCustomSlots(speedMbps) {
-        if (!speedMbps) return 0;
-        const remaining = this.metrics.remaining_capacity_mbps || 0;
-        return Math.floor((remaining * this.contentionMultiplier) / speedMbps);
-    },
-
-    initThroughputChart() {
-        const ctx = document.getElementById('nocLiveThroughputChart')?.getContext('2d');
-        if (!ctx) return;
-        
-        const history = this.metrics.live_history || [];
-        const labels = history.map(h => h.time);
-        const rxData = history.map(h => h.rx);
-        const txData = history.map(h => h.tx);
-
-        this.chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Download Pulled (Rx)',
-                        data: rxData,
-                        borderColor: '#06b6d4',
-                        backgroundColor: 'rgba(6, 182, 212, 0.18)',
-                        fill: true,
-                        tension: 0.38,
-                        borderWidth: 2.5,
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: '#06b6d4',
-                    },
-                    {
-                        label: 'Upload Pulled (Tx)',
-                        data: txData,
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                        fill: true,
-                        tension: 0.38,
-                        borderWidth: 2,
-                        pointRadius: 2,
-                        pointHoverRadius: 5,
-                        pointBackgroundColor: '#3b82f6',
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 300 },
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
+            this.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Download Pulled (Rx)',
+                            data: rxData,
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6, 182, 212, 0.18)',
+                            fill: true,
+                            tension: 0.38,
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#06b6d4',
+                        },
+                        {
+                            label: 'Upload Pulled (Tx)',
+                            data: txData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                            fill: true,
+                            tension: 0.38,
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            pointBackgroundColor: '#3b82f6',
+                        }
+                    ]
                 },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(51, 65, 85, 0.25)' },
-                        ticks: { color: '#94a3b8', font: { size: 10, family: 'monospace' } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
                     },
-                    y: {
-                        grid: { color: 'rgba(51, 65, 85, 0.35)' },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { size: 10, family: 'monospace' },
-                            callback: function(v) {
-                                return v >= 1000 ? (v / 1000).toFixed(1) + 'G' : v + 'M';
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(51, 65, 85, 0.25)' },
+                            ticks: { color: '#94a3b8', font: { size: 10, family: 'monospace' } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(51, 65, 85, 0.35)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { size: 10, family: 'monospace' },
+                                callback: function(v) {
+                                    return v >= 1000 ? (v / 1000).toFixed(1) + 'G' : v + 'M';
+                                }
                             }
                         }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        align: 'end',
-                        labels: {
-                            color: '#cbd5e1',
-                            font: { size: 11 },
-                            boxWidth: 12,
-                            usePointStyle: true,
-                        }
                     },
-                    tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + ctx.parsed.y + ' Mbps';
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                color: '#cbd5e1',
+                                font: { size: 11 },
+                                boxWidth: 12,
+                                usePointStyle: true,
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    return ctx.dataset.label + ': ' + ctx.parsed.y + ' Mbps';
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
-    },
+            });
+        },
 
-    updateChart(metrics) {
-        if (!this.chartInstance) return;
-        const history = metrics.live_history || [];
-        if (history.length === 0) return;
+        updateChart(metrics) {
+            if (!this.chartInstance) return;
+            const history = metrics.live_history || [];
+            if (history.length === 0) return;
 
-        this.chartInstance.data.labels = history.map(h => h.time);
-        this.chartInstance.data.datasets[0].data = history.map(h => h.rx);
-        this.chartInstance.data.datasets[1].data = history.map(h => h.tx);
-        this.chartInstance.update('none');
-    },
+            this.chartInstance.data.labels = history.map(h => h.time);
+            this.chartInstance.data.datasets[0].data = history.map(h => h.rx);
+            this.chartInstance.data.datasets[1].data = history.map(h => h.tx);
+            this.chartInstance.update('none');
+        },
 
-    askAiQuick(promptText) {
-        this.aiQuery = promptText;
-        this.aiLoading = true;
-        this.aiResponse = '';
-        fetch('{{ route('noc.ask-ai') }}?query=' + encodeURIComponent(promptText))
-            .then(r => r.json())
-            .then(d => { this.aiResponse = d.answer; this.aiLoading = false; })
-            .catch(() => { this.aiResponse = 'Error querying AI assistant.'; this.aiLoading = false; });
-    }
-}" class="space-y-6">
+        askAiQuick(promptText) {
+            this.aiQuery = promptText;
+            this.aiLoading = true;
+            this.aiResponse = '';
+            fetch('{{ route('noc.ask-ai') }}?query=' + encodeURIComponent(promptText))
+                .then(r => r.json())
+                .then(d => { this.aiResponse = d.answer; this.aiLoading = false; })
+                .catch(() => { this.aiResponse = 'Error querying AI assistant.'; this.aiLoading = false; });
+        },
+
+        submitAiQuery() {
+            if (!this.aiQuery.trim()) return;
+            this.askAiQuick(this.aiQuery);
+        }
+    };
+}
+</script>
+
+<div x-data="nocDashboard()" class="space-y-6">
 
     <!-- Header & Action Strip -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -659,25 +670,9 @@
         </div>
 
         <div class="flex items-center space-x-2">
-            <input type="text" x-model="aiQuery" @keydown.enter="
-                if (!aiQuery.trim()) return;
-                aiLoading = true;
-                aiResponse = '';
-                fetch('{{ route('noc.ask-ai') }}?query=' + encodeURIComponent(aiQuery))
-                    .then(r => r.json())
-                    .then(d => { aiResponse = d.answer; aiLoading = false; })
-                    .catch(() => { aiResponse = 'Error querying AI assistant.'; aiLoading = false; });
-            " placeholder="e.g. How much capacity is remaining to sell? Or what is real-time traffic pulled?" class="flex-1 px-4 py-2.5 bg-slate-950/90 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition">
+            <input type="text" x-model="aiQuery" @keydown.enter="submitAiQuery()" placeholder="e.g. How much capacity is remaining to sell? Or what is real-time traffic pulled?" class="flex-1 px-4 py-2.5 bg-slate-950/90 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition">
             
-            <button type="button" @click="
-                if (!aiQuery.trim()) return;
-                aiLoading = true;
-                aiResponse = '';
-                fetch('{{ route('noc.ask-ai') }}?query=' + encodeURIComponent(aiQuery))
-                    .then(r => r.json())
-                    .then(d => { aiResponse = d.answer; aiLoading = false; })
-                    .catch(() => { aiResponse = 'Error querying AI assistant.'; aiLoading = false; });
-            " class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-cyan-600/30 transition">
+            <button type="button" @click="submitAiQuery()" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-cyan-600/30 transition">
                 <span x-show="!aiLoading">Consult Copilot</span>
                 <span x-show="aiLoading" x-cloak>Analyzing...</span>
             </button>

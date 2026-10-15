@@ -151,4 +151,51 @@ class BillingController extends Controller
 
         return back()->with('success', "Generated {$validated['quantity']} {$validated['type']} vouchers for plan '{$plan->name}'!");
     }
+
+    /**
+     * Display the ISP Tenant's current SaaS subscription, 7-day trial status, and platform invoices.
+     */
+    public function subscription()
+    {
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()->tenant_id;
+        $tenant = \App\Models\Tenant::findOrFail($tenantId);
+
+        $subscription = $tenant->activeSubscription;
+        $plans = \App\Models\SaasPlan::where('is_active', true)->with('currentVersion')->get();
+        $invoices = $tenant->saasInvoices()->with('items')->latest()->take(10)->get();
+
+        return view('billing.saas_subscription', compact('tenant', 'subscription', 'plans', 'invoices'));
+    }
+
+    /**
+     * Submit simulated or M-Pesa payment for the ISP's SaaS platform subscription.
+     */
+    public function paySubscription(Request $request, \App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
+    {
+        $validated = $request->validate([
+            'phone'    => 'nullable|string',
+            'provider' => 'required|in:mpesa,bank_transfer,card,manual',
+        ]);
+
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()->tenant_id;
+        $tenant = \App\Models\Tenant::findOrFail($tenantId);
+        $subscription = $tenant->activeSubscription;
+
+        if (!$subscription) {
+            return back()->with('error', 'No subscription found for this tenant.');
+        }
+
+        $ref = 'PAY-' . strtoupper(\Illuminate\Support\Str::random(8));
+
+        $payment = $lifecycle->recordPaymentAndActivate(
+            $subscription,
+            (float) $subscription->amount,
+            $ref,
+            $validated['provider'],
+            $request->user(),
+            "Online subscription renewal paid via " . strtoupper($validated['provider'])
+        );
+
+        return back()->with('success', "Payment of {$subscription->currency} " . number_format($subscription->amount) . " confirmed (Ref: {$ref})! Your subscription is now ACTIVE_PAID.");
+    }
 }

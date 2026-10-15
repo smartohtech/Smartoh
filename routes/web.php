@@ -20,13 +20,25 @@ use App\Http\Controllers\TicketController;
 use App\Http\Controllers\UniversalCpeController;
 use App\Http\Controllers\UdieDeviceController;
 use App\Http\Controllers\WholesaleController;
+use App\Http\Controllers\PublicMarketingController;
+use App\Http\Controllers\Platform\PlatformDashboardController;
+use App\Http\Controllers\Platform\PlatformApplicationController;
+use App\Http\Controllers\Platform\PlatformTenantController;
+use App\Http\Controllers\Platform\PlatformPlanController;
+use App\Http\Controllers\Platform\PlatformSubscriptionController;
+use App\Http\Controllers\Platform\PlatformInvoiceController;
+use App\Http\Controllers\Platform\PlatformAuditController;
 use Illuminate\Support\Facades\Route;
 
-// Public Landing Page
+// Public Landing & Marketing Pages
 Route::get('/', function () {
     return view('landing');
 })->name('landing');
 
+Route::get('/features', [PublicMarketingController::class, 'features'])->name('features');
+Route::get('/pricing', [PublicMarketingController::class, 'pricing'])->name('pricing');
+Route::get('/application-status', [PublicMarketingController::class, 'applicationStatus'])->name('application.status');
+Route::post('/application-status/respond/{application}', [PublicMarketingController::class, 'submitInfoResponse'])->name('application.respond');
 
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.post');
@@ -39,8 +51,8 @@ Route::post('/register', [AuthController::class, 'register'])->name('register.po
 // TR-069 CWMP Inform Endpoint (CPEs connect here)
 Route::post('/cwmp/inform', [UniversalCpeController::class, 'handleCwmpInform'])->name('cwmp.inform');
 
-// Authenticated Application Routes
-Route::middleware(['auth'])->group(function () {
+// Authenticated Application Routes (Guarded by auth & enforce_subscription)
+Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     // Executive Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -71,6 +83,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/payments/stk-push', [BillingController::class, 'triggerStkPush'])->name('payments.stk-push');
         Route::get('/vouchers', [BillingController::class, 'vouchers'])->name('vouchers');
         Route::post('/vouchers/generate', [BillingController::class, 'generateVouchers'])->name('vouchers.generate');
+        Route::get('/subscription', [BillingController::class, 'subscription'])->name('subscription');
+        Route::post('/subscription/pay', [BillingController::class, 'paySubscription'])->name('subscription.pay');
     });
 
     // Network & MikroTik Core
@@ -243,3 +257,56 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/Proration', [AdminPlatformController::class, 'proration']);
     Route::get('/SystemPlan', [AdminPlatformController::class, 'systemPlan']);
 });
+
+// =========================================================================
+// SUPER ADMIN CONTROL PANEL (Exclusively guarded by auth & super_admin)
+// =========================================================================
+Route::prefix('platform')->name('platform.')->middleware(['auth', 'super_admin'])->group(function () {
+    Route::get('/', [PlatformDashboardController::class, 'index'])->name('dashboard');
+
+    // 1. ISP Applications & Onboarding Workflow
+    Route::prefix('applications')->name('applications.')->group(function () {
+        Route::get('/', [PlatformApplicationController::class, 'index'])->name('index');
+        Route::get('/{application}', [PlatformApplicationController::class, 'show'])->name('show');
+        Route::post('/{application}/approve', [PlatformApplicationController::class, 'approve'])->name('approve');
+        Route::post('/{application}/reject', [PlatformApplicationController::class, 'reject'])->name('reject');
+        Route::post('/{application}/request-info', [PlatformApplicationController::class, 'requestInfo'])->name('request-info');
+    });
+
+    // 2. Tenant Management & Administrative Controls
+    Route::prefix('tenants')->name('tenants.')->group(function () {
+        Route::get('/', [PlatformTenantController::class, 'index'])->name('index');
+        Route::get('/{tenant}', [PlatformTenantController::class, 'show'])->name('show');
+        Route::post('/{tenant}/suspend', [PlatformTenantController::class, 'suspend'])->name('suspend');
+        Route::post('/{tenant}/reinstate', [PlatformTenantController::class, 'reinstate'])->name('reinstate');
+        Route::get('/{tenant}/impersonate', [PlatformTenantController::class, 'impersonate'])->name('impersonate');
+    });
+
+    // 3. SaaS Plans, Pricing & Versioning
+    Route::prefix('plans')->name('plans.')->group(function () {
+        Route::get('/', [PlatformPlanController::class, 'index'])->name('index');
+        Route::post('/', [PlatformPlanController::class, 'store'])->name('store');
+        Route::put('/{plan}', [PlatformPlanController::class, 'update'])->name('update');
+        Route::post('/{plan}/toggle-status', [PlatformPlanController::class, 'toggleStatus'])->name('toggle-status');
+    });
+
+    // 4. Subscriptions & 7-Day Trial Engine
+    Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
+        Route::get('/', [PlatformSubscriptionController::class, 'index'])->name('index');
+        Route::get('/{subscription}', [PlatformSubscriptionController::class, 'show'])->name('show');
+        Route::post('/{subscription}/update-status', [PlatformSubscriptionController::class, 'updateStatus'])->name('update-status');
+        Route::post('/{subscription}/extend-trial', [PlatformSubscriptionController::class, 'extendTrial'])->name('extend-trial');
+        Route::post('/{subscription}/invoice', [PlatformSubscriptionController::class, 'generateInvoice'])->name('invoice');
+    });
+
+    // 5. Invoices & Payment Gateway Reconciliation
+    Route::prefix('invoices')->name('invoices.')->group(function () {
+        Route::get('/', [PlatformInvoiceController::class, 'index'])->name('index');
+        Route::get('/{invoice}', [PlatformInvoiceController::class, 'show'])->name('show');
+        Route::post('/{invoice}/record-payment', [PlatformInvoiceController::class, 'recordPayment'])->name('record-payment');
+    });
+
+    // 6. Security, Audit Logs & Governance
+    Route::get('/audit', [PlatformAuditController::class, 'index'])->name('audit.index');
+});
+

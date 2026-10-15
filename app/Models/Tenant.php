@@ -90,6 +90,31 @@ class Tenant extends Model
         return $this->hasOne(SecuritySetting::class);
     }
 
+    public function saasSubscriptions(): HasMany
+    {
+        return $this->hasMany(SaasSubscription::class)->latest('created_at');
+    }
+
+    public function activeSubscription(): HasOne
+    {
+        return $this->hasOne(SaasSubscription::class)->latestOfMany();
+    }
+
+    public function saasInvoices(): HasMany
+    {
+        return $this->hasMany(SaasInvoice::class)->latest('created_at');
+    }
+
+    public function usage(): HasOne
+    {
+        return $this->hasOne(TenantUsage::class);
+    }
+
+    public function application(): HasOne
+    {
+        return $this->hasOne(IspApplication::class, 'provisioned_tenant_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

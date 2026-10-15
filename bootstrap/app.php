@@ -19,7 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'role' => CheckRoleMiddleware::class,
+            'role'                 => CheckRoleMiddleware::class,
+            'super_admin'          => \App\Http\Middleware\SuperAdminMiddleware::class,
+            'enforce_subscription' => \App\Http\Middleware\EnforceSubscriptionStateMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

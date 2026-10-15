@@ -16,6 +16,18 @@
     <!-- Navigation Scroll Container -->
     <nav class="flex-1 overflow-y-auto overscroll-none py-3 px-2 space-y-4 text-xs font-medium">
 
+        @if(auth()->user()?->role === 'super_admin')
+        <div class="px-1 pb-2">
+            <a href="{{ route('platform.dashboard') }}" class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 hover:brightness-110 transition">
+                <span class="flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span>Super Admin Panel</span>
+                </span>
+                <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-mono uppercase">Platform</span>
+            </a>
+        </div>
+        @endif
+
         <!-- 4 Primary Direct Quick Links (matching Base44 DM) -->
         <div class="space-y-0.5">
             @php
@@ -274,6 +286,10 @@
                 <a href="{{ route('admin.proration') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.proration') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-lime-400"></span>
                     <span>Mid-Cycle Proration</span>
+                </a>
+                <a href="{{ route('billing.subscription') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('billing.subscription') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>SaaS Subscription &amp; Trial</span>
                 </a>
                 <a href="{{ route('admin.system-plan') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.system-plan') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>

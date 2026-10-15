@@ -147,6 +147,10 @@
                             <div class="text-xs font-bold text-slate-900 dark:text-white">{{ auth()->user()->name }}</div>
                             <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">{{ auth()->user()->email }}</div>
                         </div>
+                        @if(auth()->user()->role === 'super_admin')
+                        <a href="{{ route('platform.dashboard') }}" class="block px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/30">Super Admin Control Panel</a>
+                        @endif
+                        <a href="{{ route('billing.subscription') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">SaaS Subscription & Plan</a>
                         <a href="{{ route('tenants.index') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Organization Branding</a>
                         <a href="{{ route('client.portal') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Client Portal View</a>
                         <form method="POST" action="{{ route('logout') }}" class="border-t border-slate-100 dark:border-slate-800">
@@ -158,6 +162,74 @@
                 @endauth
             </div>
         </header>
+
+        <!-- Real-time 7-Day Trial / Subscription Status Banner -->
+        @auth
+            @if(auth()->user()->tenant_id && auth()->user()->role !== 'super_admin')
+                @php
+                    $tenantSub = \App\Models\SaasSubscription::where('tenant_id', auth()->user()->tenant_id)->latest()->first();
+                @endphp
+                @if($tenantSub)
+                    @if(in_array($tenantSub->status, ['trial_active', 'trial_expiring']))
+                        @php
+                            $daysLeft = $tenantSub->daysRemainingInTrial();
+                            $hoursLeft = $tenantSub->hoursRemainingInTrial();
+                        @endphp
+                        <div class="bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-600 text-white px-4 py-2.5 text-xs shadow-md flex items-center justify-between border-b border-white/10">
+                            <div class="flex items-center space-x-2.5 flex-wrap">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white uppercase tracking-wider">
+                                    7-Day Free Trial
+                                </span>
+                                <span class="font-medium">
+                                    @if($daysLeft > 0)
+                                        You have <strong class="underline decoration-white/50">{{ $daysLeft }} day{{ $daysLeft > 1 ? 's' : '' }}</strong> remaining in your free trial.
+                                    @else
+                                        Your trial expires in <strong class="underline decoration-white/50">{{ $hoursLeft }} hour{{ $hoursLeft > 1 ? 's' : '' }}</strong>!
+                                    @endif
+                                </span>
+                                <span class="hidden lg:inline text-blue-200">Enjoy full ISP network access. Upgrade anytime to avoid interruption.</span>
+                            </div>
+                            <div class="flex items-center space-x-2 shrink-0">
+                                <a href="{{ route('billing.subscription') }}" class="px-3 py-1 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-lg text-xs shadow-sm transition">
+                                    View Subscription &rarr;
+                                </a>
+                            </div>
+                        </div>
+                    @elseif(in_array($tenantSub->status, ['trial_expired', 'past_due', 'grace_period', 'payment_pending']))
+                        <div class="bg-gradient-to-r from-amber-600 to-rose-600 text-white px-4 py-2.5 text-xs shadow-md flex items-center justify-between border-b border-white/10">
+                            <div class="flex items-center space-x-2.5">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white uppercase tracking-wider">
+                                    Subscription Notice
+                                </span>
+                                <span class="font-medium">
+                                    Status: <strong>{{ strtoupper(str_replace('_', ' ', $tenantSub->status)) }}</strong>.
+                                    Operational network actions are paused until renewal payment is processed.
+                                </span>
+                            </div>
+                            <div class="flex items-center space-x-2 shrink-0">
+                                <a href="{{ route('billing.subscription') }}" class="px-3 py-1 bg-white text-rose-700 hover:bg-rose-50 font-bold rounded-lg text-xs shadow-sm transition">
+                                    Pay Now &rarr;
+                                </a>
+                            </div>
+                        </div>
+                    @endif
+                @endif
+            @elseif(auth()->user()->role === 'super_admin')
+                <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-cyan-950 text-slate-200 px-4 py-2 text-xs flex items-center justify-between border-b border-cyan-500/20">
+                    <div class="flex items-center space-x-2">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            SUPER ADMIN
+                        </span>
+                        <span class="text-slate-300">You are logged in as Platform Super Administrator.</span>
+                    </div>
+                    <div>
+                        <a href="{{ route('platform.dashboard') }}" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold transition">
+                            Open Control Panel &rarr;
+                        </a>
+                    </div>
+                </div>
+            @endif
+        @endauth
 
         <!-- Flash Alert Messages -->
         @if(session('success'))

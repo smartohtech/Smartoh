@@ -95,6 +95,120 @@
 
     </div>
 
+    <!-- Subscription Quota Tracking Widget -->
+    @if($tenantSub)
+    @php
+        $limits = $tenantSub->planVersion->limits ?? $tenantSub->plan->currentVersion->limits ?? [
+            'subscribers' => 100,
+            'devices' => 5,
+            'staff' => 2,
+        ];
+        $subLimit = isset($limits['subscribers']) && is_numeric($limits['subscribers']) ? (int)$limits['subscribers'] : 100;
+        $subCount = $tenantUsage->active_subscribers_count ?? $activeClients;
+        $subPct = min(100, round(($subCount / max(1, $subLimit)) * 100));
+
+        $devLimit = isset($limits['devices']) && is_numeric($limits['devices']) ? (int)$limits['devices'] : 5;
+        $devCount = $tenantUsage->managed_routers_count ?? $totalDevices;
+        $devPct = min(100, round(($devCount / max(1, $devLimit)) * 100));
+
+        $staffLimit = isset($limits['staff']) && is_numeric($limits['staff']) ? (int)$limits['staff'] : 2;
+        $staffCount = $tenantUsage->active_staff_count ?? 1;
+        $staffPct = min(100, round(($staffCount / max(1, $staffLimit)) * 100));
+    @endphp
+    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
+        <div class="absolute -right-12 -top-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10 mb-4 pb-4 border-b border-indigo-500/20">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-mono uppercase tracking-wider text-indigo-300">SaaS Plan Quotas</span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
+                            {{ in_array($tenantSub->status, ['active_paid']) ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : '' }}
+                            {{ in_array($tenantSub->status, ['trial_active', 'trial_expiring']) ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : '' }}
+                            {{ in_array($tenantSub->status, ['trial_expired', 'past_due', 'grace_period', 'payment_pending']) ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : '' }}
+                        ">
+                            {{ str_replace('_', ' ', $tenantSub->status) }}
+                        </span>
+                    </div>
+                    <h3 class="text-base font-bold text-white">{{ $tenantSub->plan->name ?? 'Custom Tier' }}</h3>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                @if(in_array($tenantSub->status, ['trial_active', 'trial_expiring']))
+                    <div class="text-right">
+                        <p class="text-[11px] text-indigo-200">Free Trial Remaining</p>
+                        <p class="text-sm font-bold font-mono text-cyan-300">
+                            {{ $tenantSub->daysRemainingInTrial() > 0 ? $tenantSub->daysRemainingInTrial() . ' Days' : $tenantSub->hoursRemainingInTrial() . ' Hours' }}
+                        </p>
+                    </div>
+                @elseif($tenantSub->status === 'active_paid')
+                    <div class="text-right">
+                        <p class="text-[11px] text-indigo-200">Renewal Cycle</p>
+                        <p class="text-sm font-bold font-mono text-emerald-300">
+                            {{ $tenantSub->current_period_end ? $tenantSub->current_period_end->format('M d, Y') : 'Active' }}
+                        </p>
+                    </div>
+                @endif
+                <a href="{{ route('billing.subscription') }}" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center space-x-1 shrink-0">
+                    <span>Manage Plan &amp; Quotas</span>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Active Subscribers Quota -->
+            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                    <span class="text-indigo-200">Active Subscribers</span>
+                    <span class="font-bold font-mono {{ $subPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $subCount }} / {{ $subLimit }}</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 {{ $subPct >= 90 ? 'bg-rose-500' : 'bg-blue-500' }}" style="width: {{ $subPct }}%"></div>
+                </div>
+                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                    <span>{{ $subPct }}% used</span>
+                    <span>{{ max(0, $subLimit - $subCount) }} slots available</span>
+                </div>
+            </div>
+
+            <!-- Managed Routers Quota -->
+            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                    <span class="text-indigo-200">Routers &amp; OLTs</span>
+                    <span class="font-bold font-mono {{ $devPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $devCount }} / {{ $devLimit }}</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 {{ $devPct >= 90 ? 'bg-rose-500' : 'bg-indigo-400' }}" style="width: {{ $devPct }}%"></div>
+                </div>
+                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                    <span>{{ $devPct }}% used</span>
+                    <span>{{ max(0, $devLimit - $devCount) }} devices available</span>
+                </div>
+            </div>
+
+            <!-- Staff Accounts Quota -->
+            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                    <span class="text-indigo-200">Staff Accounts</span>
+                    <span class="font-bold font-mono {{ $staffPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $staffCount }} / {{ $staffLimit }}</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 {{ $staffPct >= 90 ? 'bg-rose-500' : 'bg-emerald-400' }}" style="width: {{ $staffPct }}%"></div>
+                </div>
+                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                    <span>{{ $staffPct }}% used</span>
+                    <span>{{ max(0, $staffLimit - $staffCount) }} seats available</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     <!-- Row 2: Payment Revenue by Method & SMS Usage (Bar Charts) -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         

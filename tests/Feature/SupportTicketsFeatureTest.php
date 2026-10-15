@@ -9,10 +9,41 @@ use Tests\TestCase;
 
 class SupportTicketsFeatureTest extends TestCase
 {
+    protected \App\Models\Tenant $tenant;
+    protected User $user;
+    protected Client $client;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->tenant = \App\Models\Tenant::first() ?? \App\Models\Tenant::create([
+            'name' => 'Support Test ISP',
+            'status' => 'active',
+        ]);
+
+        $this->user = User::where('role', 'super_admin')->first() ?? User::create([
+            'name' => 'Super Admin',
+            'email' => 'admin@smartoh.net',
+            'password' => bcrypt('password'),
+            'role' => 'super_admin',
+            'tenant_id' => $this->tenant->id,
+            'is_approved' => true,
+        ]);
+
+        $this->client = Client::first() ?? Client::create([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'Test Subscriber',
+            'email' => 'client@smartoh.net',
+            'phone' => '254700000000',
+            'account_number' => 'ACC-9999',
+            'status' => 'active',
+        ]);
+    }
+
     protected function getSuperAdmin(): User
     {
-        return User::where('role', 'super_admin')->first() 
-            ?? User::first();
+        return $this->user;
     }
 
     public function test_tickets_desk_renders_successfully(): void
@@ -31,7 +62,7 @@ class SupportTicketsFeatureTest extends TestCase
     public function test_staff_can_create_support_ticket(): void
     {
         $user = $this->getSuperAdmin();
-        $client = Client::first();
+        $client = $this->client;
 
         $response = $this->actingAs($user)->post('/tickets', [
             'client_id' => $client->id,

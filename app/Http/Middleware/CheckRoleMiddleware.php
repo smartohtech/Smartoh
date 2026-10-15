@@ -20,7 +20,7 @@ class CheckRoleMiddleware
             return $next($request);
         }
 
-        if (!in_array($user->role, $roles, true)) {
+        if (!$user->hasRole(...$roles)) {
             abort(403, 'Unauthorized access to this module for your role (' . $user->role . ').');
         }
 

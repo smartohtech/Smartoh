@@ -297,6 +297,12 @@ class UdieEngineTest extends TestCase
     {
         $anomalyDetector = app(AnomalyDetector::class);
 
+        $olt = \App\Models\OLTDevice::create([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'Main GPON OLT',
+            'ip_address' => '10.0.0.1',
+        ]);
+
         $device = Device::create([
             'tenant_id' => $this->tenant->id,
             'device_type' => 'ont',
@@ -304,7 +310,7 @@ class UdieEngineTest extends TestCase
             'model' => 'F670L',
             'mac_address' => '00:1E:73:11:22:33',
             'serial_number' => 'ZTEGC1234567',
-            'olt_id' => 1,
+            'olt_id' => $olt->id,
             'pon_id' => '1/1/1',
             'identification_status' => 'verified',
             'confidence_score' => 90.0,
@@ -317,7 +323,7 @@ class UdieEngineTest extends TestCase
             timestamp: now()->toIso8601String(),
             macAddress: '00:1E:73:11:22:33',
             serialNumber: 'ZTEGC1234567',
-            oltId: 1,
+            oltId: $olt->id,
             ponId: '1/1/4'
         );
 
@@ -560,6 +566,16 @@ class UdieEngineTest extends TestCase
      */
     public function test_discovery_job_records_stats_in_database(): void
     {
+        \App\Models\MikroTikDevice::create([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'Core Gateway',
+            'ip_address' => '192.168.88.1',
+            'api_port' => 8728,
+            'api_username' => 'admin',
+            'api_password_encrypted' => encrypt('secret'),
+            'is_online' => true,
+        ]);
+
         $job = DiscoveryJob::create([
             'tenant_id' => $this->tenant->id,
             'source' => 'all',

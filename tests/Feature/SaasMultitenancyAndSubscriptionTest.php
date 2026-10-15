@@ -252,4 +252,127 @@ class SaasMultitenancyAndSubscriptionTest extends TestCase
         $this->assertEquals(SaasSubscription::STATUS_ACTIVE_PAID, $sub->status);
         $this->assertNotNull($sub->current_period_end);
     }
+
+    /**
+     * 7. Role-Based Access: Tenant Admin is strictly blocked from super admin platform routes.
+     */
+    public function test_tenant_admin_cannot_access_platform_level_super_admin_routes(): void
+    {
+        // 1. /tenants
+        $res = $this->actingAs($this->ispAdmin)->get('/tenants');
+        $res->assertStatus(403);
+
+        // 2. /admin/isp-approvals
+        $res = $this->actingAs($this->ispAdmin)->get('/admin/isp-approvals');
+        $res->assertStatus(403);
+
+        // 3. /ISPApprovals
+        $res = $this->actingAs($this->ispAdmin)->get('/ISPApprovals');
+        $res->assertStatus(403);
+
+        // 4. Wildcard /admin/tenants/* and /admin/approvals/*
+        $res = $this->actingAs($this->ispAdmin)->get('/admin/tenants/manage');
+        $res->assertStatus(403);
+
+        $res = $this->actingAs($this->ispAdmin)->get('/admin/approvals/review');
+        $res->assertStatus(403);
+
+        // Super Admin CAN access these routes
+        $superRes = $this->actingAs($this->superAdmin)->get('/tenants');
+        $superRes->assertStatus(200);
+
+        $superApprovalsRes = $this->actingAs($this->superAdmin)->get('/admin/isp-approvals');
+        $superApprovalsRes->assertStatus(200);
+    }
+
+    /**
+     * 8. Scoping: Staff role approvals, audit logs, and branding are strictly isolated to tenant_id.
+     */
+    public function test_tenant_admin_actions_are_strictly_scoped_to_own_tenant(): void
+    {
+        // Create Tenant 2 and its user
+        $tenant2 = Tenant::create([
+            'name'      => 'Other ISP Ltd',
+            'subdomain' => 'otherisp',
+            'status'    => 'active',
+        ]);
+
+        $userTenant2 = User::create([
+            'name'        => 'Bob Other',
+            'email'       => 'bob@otherisp.com',
+            'password'    => bcrypt('password'),
+            'role'        => 'technician',
+            'tenant_id'   => $tenant2->id,
+            'is_approved' => false,
+        ]);
+
+        $userTenant1 = User::create([
+            'name'        => 'Alice Tech',
+            'email'       => 'alice@ctech.com',
+            'password'    => bcrypt('password'),
+            'role'        => 'technician',
+            'tenant_id'   => $this->tenant->id,
+            'is_approved' => false,
+        ]);
+
+        // Tenant 1 admin views user approvals
+        $response = $this->actingAs($this->ispAdmin)->get(route('admin.user-approvals'));
+        $response->assertStatus(200);
+        $response->assertSee('Alice Tech');
+        $response->assertDontSee('Bob Other');
+
+        // Tenant 1 admin tries to approve Tenant 2 user -> 403
+        $approveResponse = $this->actingAs($this->ispAdmin)->post(route('admin.user.approve', $userTenant2));
+        $approveResponse->assertStatus(403);
+
+        // Tenant 1 admin CAN approve own tenant user
+        $approveOwnResponse = $this->actingAs($this->ispAdmin)->post(route('admin.user.approve', $userTenant1));
+        $approveOwnResponse->assertRedirect();
+        $this->assertTrue($userTenant1->fresh()->is_approved);
+
+        // Cross-tenant branding update attempt -> 403
+        $brandingRes = $this->actingAs($this->ispAdmin)->post(route('tenants.branding', $tenant2), [
+            'brand_color'   => '#FF0000',
+            'accent_color'  => '#00FF00',
+            'theme_mode'    => 'dark',
+            'custom_domain' => 'custom.otherisp.com',
+        ]);
+        $brandingRes->assertStatus(403);
+    }
+
+    /**
+     * 9. Sidebar and navigation do not leak super admin links to tenant admin.
+     */
+    public function test_sidebar_and_navigation_do_not_leak_super_admin_links_to_tenant_admin(): void
+    {
+        // Ensure active trial for tenant so dashboard loads
+        SaasSubscription::create([
+            'tenant_id'            => $this->tenant->id,
+            'saas_plan_id'         => $this->plan->id,
+            'saas_plan_version_id' => $this->plan->currentVersion?->id,
+            'status'               => SaasSubscription::STATUS_TRIAL_ACTIVE,
+            'billing_interval'     => 'monthly',
+            'amount'               => 14000,
+            'currency'             => 'KES',
+            'trial_started_at'     => Carbon::now(),
+            'trial_ends_at'        => Carbon::now()->addDays(7),
+        ]);
+
+        $response = $this->actingAs($this->ispAdmin)->get(route('dashboard'));
+        $response->assertStatus(200);
+
+        // Must NOT see Super Admin navigation items in tenant admin view
+        $response->assertDontSee('ISP Tenants &amp; White-Label');
+        $response->assertDontSee('ISP Approvals');
+
+        // Must see retained tenant admin settings and Company Branding
+        $response->assertSee('Company Branding');
+        $response->assertSee('Staff Role Approvals');
+        $response->assertSee('System Settings');
+        $response->assertSee('Audit Trail Logs');
+
+        // Must see Quotas widget and AI Copilot
+        $response->assertSee('SaaS Plan Quotas');
+        $response->assertSee('AI Copilot');
+    }
 }

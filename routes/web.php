@@ -149,8 +149,8 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
 
     // Super Admin / Platform Owner Tenants
     Route::prefix('tenants')->name('tenants.')->group(function () {
-        Route::get('/', [TenantController::class, 'index'])->name('index');
-        Route::post('/', [TenantController::class, 'store'])->name('store');
+        Route::get('/', [TenantController::class, 'index'])->name('index')->middleware('super_admin');
+        Route::post('/', [TenantController::class, 'store'])->name('store')->middleware('super_admin');
         Route::post('/{tenant}/branding', [TenantController::class, 'updateBranding'])->name('branding');
     });
 
@@ -224,10 +224,10 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     });
     Route::get('/reports', [CrmInventoryController::class, 'reports'])->name('reports.index');
 
-    // 6. Platform Administration & Security
+    // 6. Platform Administration & Security (Tenant-scoped administration)
     Route::prefix('admin')->name('admin.')->group(function () {
-        Route::get('/isp-approvals', [AdminPlatformController::class, 'ispApprovals'])->name('isp-approvals');
-        Route::post('/isp-approvals/{tenant}/approve', [AdminPlatformController::class, 'approveIsp'])->name('isp.approve');
+        Route::get('/isp-approvals', [AdminPlatformController::class, 'ispApprovals'])->name('isp-approvals')->middleware('super_admin');
+        Route::post('/isp-approvals/{tenant}/approve', [AdminPlatformController::class, 'approveIsp'])->name('isp.approve')->middleware('super_admin');
         Route::get('/user-approvals', [AdminPlatformController::class, 'userApprovals'])->name('user-approvals');
         Route::post('/user-approvals/{user}/approve', [AdminPlatformController::class, 'approveUser'])->name('user.approve');
         Route::get('/tenant-branding', [AdminPlatformController::class, 'tenantBranding'])->name('tenant-branding');
@@ -236,6 +236,10 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
         Route::get('/proration', [AdminPlatformController::class, 'proration'])->name('proration');
         Route::post('/proration/calculate', [AdminPlatformController::class, 'calculateProration'])->name('proration.calculate');
         Route::get('/system-plan', [AdminPlatformController::class, 'systemPlan'])->name('system-plan');
+
+        // Restricted Super Admin Paths under /admin
+        Route::any('/tenants/{any?}', fn() => abort(403, 'Restricted to Platform Super Administrators.'))->where('any', '.*');
+        Route::any('/approvals/{any?}', fn() => abort(403, 'Restricted to Platform Super Administrators.'))->where('any', '.*');
     });
 
     // Base44 Exact URL Aliases (for 1:1 parity with smartohtechnologies.base44.app routes)
@@ -251,7 +255,7 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     Route::get('/Inventory', [CrmInventoryController::class, 'inventory']);
     Route::get('/AdvancedReports', [CrmInventoryController::class, 'reports']);
     Route::get('/PredictiveMaintenance', [OperationsHubController::class, 'predictiveMaintenance']);
-    Route::get('/ISPApprovals', [AdminPlatformController::class, 'ispApprovals']);
+    Route::get('/ISPApprovals', [AdminPlatformController::class, 'ispApprovals'])->middleware('super_admin');
     Route::get('/UserApprovals', [AdminPlatformController::class, 'userApprovals']);
     Route::get('/TenantBrandingSettings', [AdminPlatformController::class, 'tenantBranding']);
     Route::get('/Proration', [AdminPlatformController::class, 'proration']);

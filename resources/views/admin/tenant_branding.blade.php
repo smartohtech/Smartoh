@@ -15,8 +15,8 @@
                 <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider font-mono">White-Label Engine</span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 font-mono">Custom Branding</span>
             </div>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white mt-0.5">Organization &amp; Tenant Branding</h1>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Customize your subscriber portal URL, custom CNAME domain, brand colors, and theme aesthetics.</p>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white mt-0.5">Company Branding &amp; White-Label</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Customize your Company &amp; Organization subscriber portal URL, custom CNAME domain, brand colors, and theme aesthetics.</p>
         </div>
     </div>
 
@@ -64,7 +64,7 @@
 
                 <div class="pt-3">
                     <button type="submit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-md shadow-blue-600/20">
-                        Save Organization Skin
+                        Save Company Branding
                     </button>
                 </div>
             </form>

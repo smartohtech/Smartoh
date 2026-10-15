@@ -12,15 +12,28 @@ class SmartohSystemTest extends TestCase
 {
     protected function getSuperAdmin(): User
     {
+        $tenant = Tenant::first() ?? Tenant::create([
+            'name' => 'Smartoh Technologies',
+            'status' => 'active',
+        ]);
+
         return User::where('role', 'super_admin')->first() 
-            ?? User::first();
+            ?? User::first()
+            ?? User::create([
+                'name' => 'Super Admin',
+                'email' => 'admin@smartoh.net',
+                'password' => bcrypt('password'),
+                'role' => 'super_admin',
+                'tenant_id' => $tenant->id,
+                'is_approved' => true,
+            ]);
     }
 
     public function test_login_page_renders_successfully(): void
     {
         $response = $this->get('/login');
         $response->assertStatus(200);
-        $response->assertSee('Smartoh ISP Suite');
+        $response->assertSee('Smartoh Technologies');
     }
 
     public function test_authenticated_user_can_access_dashboard(): void
@@ -50,7 +63,7 @@ class SmartohSystemTest extends TestCase
         if ($client) {
             $response = $this->actingAs($user)->get('/clients/' . $client->id);
             $response->assertStatus(200);
-            $response->assertSee($client->first_name);
+            $response->assertSee($client->name);
         } else {
             $this->markTestSkipped('No clients found in test database.');
         }
@@ -127,7 +140,7 @@ class SmartohSystemTest extends TestCase
 
         $response = $this->actingAs($user)->get('/network/mikrotik');
         $response->assertStatus(200);
-        $response->assertSee('RouterOS v7 Core Engine');
+        $response->assertSee('Connect Your MikroTik Router');
     }
 
     public function test_cpe_and_olt_page_renders(): void

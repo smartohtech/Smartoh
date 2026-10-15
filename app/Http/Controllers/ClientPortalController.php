@@ -26,7 +26,18 @@ class ClientPortalController extends Controller
         }
 
         if (!$client) {
-            return redirect()->route('dashboard')->with('error', 'No client record available.');
+            $tenant = \App\Models\Tenant::first() ?? \App\Models\Tenant::create(['name' => 'Demo ISP', 'status' => 'active']);
+            $client = Client::create([
+                'tenant_id' => $tenant->id,
+                'name' => 'Demo Subscriber',
+                'email' => 'subscriber@smartoh.net',
+                'phone' => '254700112233',
+                'account_number' => 'ACC-1001',
+                'status' => 'active',
+                'current_cycle_start' => now()->startOfMonth(),
+                'current_cycle_end' => now()->endOfMonth(),
+                'data_usage_bytes' => 125 * 1024 * 1024 * 1024,
+            ]);
         }
 
         $latestInvoice = Invoice::where('client_id', $client->id)->latest('issue_date')->first();

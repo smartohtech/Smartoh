@@ -121,6 +121,9 @@ class DashboardController extends Controller
         $aiInsights = $aiAssistant->scanNetworkHealth($tenantId);
 
         $tenantsList = Tenant::all();
+        $currentTenant = $tenantId ? Tenant::find($tenantId) : auth()->user()?->tenant;
+        $tenantSub = $currentTenant?->activeSubscription;
+        $tenantUsage = $currentTenant?->usage ?? new \App\Models\TenantUsage();
 
         return view('dashboard.index', compact(
             'totalClients',
@@ -149,7 +152,10 @@ class DashboardController extends Controller
             'devicesList',
             'opticalHealth',
             'aiInsights',
-            'tenantsList'
+            'tenantsList',
+            'currentTenant',
+            'tenantSub',
+            'tenantUsage'
         ));
     }
 }

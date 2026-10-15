@@ -92,6 +92,12 @@
             <!-- Right Controls: Notifications, Theme, User -->
             <div class="flex items-center space-x-2 sm:space-x-3">
 
+                <!-- AI Operations Copilot Header Trigger -->
+                <a href="{{ route('noc.index') }}#ai" title="AI Operations Copilot" class="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 border border-cyan-500/30 flex items-center gap-1.5 transition text-xs font-semibold">
+                    <svg class="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    <span class="hidden md:inline">AI Copilot</span>
+                </a>
+
                 <!-- Notification Bell Drawer -->
                 <div class="relative" x-data="{ notifOpen: false }">
                     <button @click="notifOpen = !notifOpen" class="p-2 rounded-xl text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 relative transition">
@@ -147,11 +153,11 @@
                             <div class="text-xs font-bold text-slate-900 dark:text-white">{{ auth()->user()->name }}</div>
                             <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">{{ auth()->user()->email }}</div>
                         </div>
-                        @if(auth()->user()->role === 'super_admin')
+                        @if(auth()->user()->isSuperAdmin())
                         <a href="{{ route('platform.dashboard') }}" class="block px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/30">Super Admin Control Panel</a>
                         @endif
-                        <a href="{{ route('billing.subscription') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">SaaS Subscription & Plan</a>
-                        <a href="{{ route('tenants.index') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Organization Branding</a>
+                        <a href="{{ route('billing.subscription') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">SaaS Subscription &amp; Plan</a>
+                        <a href="{{ route('admin.tenant-branding') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Company Branding</a>
                         <a href="{{ route('client.portal') }}" class="block px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Client Portal View</a>
                         <form method="POST" action="{{ route('logout') }}" class="border-t border-slate-100 dark:border-slate-800">
                             @csrf

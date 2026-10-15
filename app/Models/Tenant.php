@@ -35,6 +35,16 @@ class Tenant extends Model
         'max_clients' => 'integer',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (Tenant $tenant) {
+            if (empty($tenant->subdomain)) {
+                $base = \Illuminate\Support\Str::slug($tenant->name ?: 'tenant');
+                $tenant->subdomain = ($base ?: 'tenant') . '-' . strtolower(\Illuminate\Support\Str::random(6));
+            }
+        });
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);

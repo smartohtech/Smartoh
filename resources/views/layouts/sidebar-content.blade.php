@@ -16,7 +16,7 @@
     <!-- Navigation Scroll Container -->
     <nav class="flex-1 overflow-y-auto overscroll-none py-3 px-2 space-y-4 text-xs font-medium">
 
-        @if(auth()->user()?->role === 'super_admin')
+        @if(auth()->user()?->isSuperAdmin())
         <div class="px-1 pb-2">
             <a href="{{ route('platform.dashboard') }}" class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 hover:brightness-110 transition">
                 <span class="flex items-center space-x-2">
@@ -67,9 +67,13 @@
                 <svg class="w-3.5 h-3.5 transform transition-transform" :class="navOpen.network_ops ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </button>
             <div x-show="navOpen.network_ops" class="space-y-0.5 pl-2">
-                <a href="{{ route('noc.index') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('noc.*') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
+                <a href="{{ route('noc.index') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('noc.*') && !request()->has('ai') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
                     <span>NOC Center</span>
+                </a>
+                <a href="{{ route('noc.index') }}#ai" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60">
+                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>
+                    <span>AI Operations Copilot</span>
                 </a>
                 <a href="{{ route('udie.index') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('udie.index') || request()->routeIs('udie.show') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
@@ -233,6 +237,10 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                     <span>Invoices</span>
                 </a>
+                <a href="{{ route('admin.proration') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.proration') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
+                    <span class="w-1.5 h-1.5 rounded-full bg-lime-400"></span>
+                    <span>Mid-Cycle Proration</span>
+                </a>
                 <a href="{{ route('billing.vouchers') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('billing.vouchers') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
                     <span>Vouchers</span>
@@ -252,13 +260,14 @@
             </div>
         </div>
 
-        <!-- 9. Administration & Security -->
+        <!-- 9. Administration & Settings -->
         <div class="space-y-1">
             <button @click="navOpen.admin_sec = !navOpen.admin_sec" class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white uppercase tracking-wider text-[11px] font-bold transition">
-                <span>Administration &amp; Security</span>
+                <span>Administration &amp; Settings</span>
                 <svg class="w-3.5 h-3.5 transform transition-transform" :class="navOpen.admin_sec ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </button>
             <div x-show="navOpen.admin_sec" x-cloak class="space-y-0.5 pl-2">
+                @if(auth()->user()?->isSuperAdmin())
                 <a href="{{ route('tenants.index') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('tenants.index') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
                     <span>ISP Tenants &amp; White-Label</span>
@@ -267,13 +276,14 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                     <span>ISP Approvals</span>
                 </a>
+                @endif
                 <a href="{{ route('admin.user-approvals') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.user-approvals') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
                     <span>Staff Role Approvals</span>
                 </a>
                 <a href="{{ route('admin.tenant-branding') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.tenant-branding') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-pink-400"></span>
-                    <span>Tenant Branding</span>
+                    <span>Company Branding</span>
                 </a>
                 <a href="{{ route('admin.system-settings') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.system-settings') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
@@ -282,22 +292,6 @@
                 <a href="{{ route('admin.audit-logs') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.audit-logs') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
                     <span>Audit Trail Logs</span>
-                </a>
-                <a href="{{ route('admin.proration') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.proration') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
-                    <span class="w-1.5 h-1.5 rounded-full bg-lime-400"></span>
-                    <span>Mid-Cycle Proration</span>
-                </a>
-                <a href="{{ route('billing.subscription') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('billing.subscription') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    <span>SaaS Subscription &amp; Trial</span>
-                </a>
-                <a href="{{ route('admin.system-plan') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.system-plan') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
-                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-                    <span>Subscription Quotas</span>
-                </a>
-                <a href="{{ route('noc.index') }}#ai" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60">
-                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                    <span>AI Operations Assistant</span>
                 </a>
             </div>
         </div>

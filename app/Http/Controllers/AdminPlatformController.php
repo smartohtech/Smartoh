@@ -12,53 +12,117 @@ use Illuminate\Http\Request;
 
 class AdminPlatformController extends Controller
 {
+    /**
+     * Platform-level ISP Approvals (Super Admin Only).
+     */
     public function ispApprovals()
     {
+        if (!auth()->user()->isSuperAdmin()) {
+            abort(403, 'Unauthorized. ISP approval review is restricted to Platform Super Administrators.');
+        }
+
         $pendingTenants = Tenant::where('status', 'pending')->get();
         $activeTenants = Tenant::where('status', 'active')->get();
 
         return view('admin.isp_approvals', compact('pendingTenants', 'activeTenants'));
     }
 
+    /**
+     * Platform-level ISP Approval Action (Super Admin Only).
+     */
     public function approveIsp(Request $request, Tenant $tenant)
     {
+        if (!auth()->user()->isSuperAdmin()) {
+            abort(403, 'Unauthorized. ISP approval is restricted to Platform Super Administrators.');
+        }
+
         $tenant->update(['status' => 'active']);
         return back()->with('success', "ISP Tenant '{$tenant->name}' has been approved and activated!");
     }
 
+    /**
+     * Staff Role Approvals: Scoped strictly to the authenticated ISP's tenant.
+     */
     public function userApprovals()
     {
-        $users = User::with('tenant')->latest()->paginate(15);
+        $user = auth()->user();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : $user->tenant_id;
+
+        $query = User::with('tenant');
+        if (!$user->isSuperAdmin()) {
+            $query->where('tenant_id', $tenantId);
+        }
+
+        $users = $query->latest()->paginate(15);
         return view('admin.user_approvals', compact('users'));
     }
 
+    /**
+     * Staff Role Approval Action: Validates tenant ownership.
+     */
     public function approveUser(Request $request, User $user)
     {
+        $authUser = auth()->user();
+        if (!$authUser->isSuperAdmin() && $user->tenant_id !== $authUser->tenant_id) {
+            abort(403, 'Unauthorized. You may only approve staff members within your organization.');
+        }
+
         $user->update(['is_approved' => true]);
-        return back()->with('success', "User '{$user->name}' approved with role '{$user->role}'.");
+        return back()->with('success', "Staff user '{$user->name}' approved with role '{$user->role}'.");
     }
 
+    /**
+     * Company Branding & White-Label: Scoped to the authenticated ISP's tenant.
+     */
     public function tenantBranding()
     {
-        $tenant = app()->bound('current_tenant_id') ? Tenant::find(app('current_tenant_id')) : Tenant::first();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? Tenant::find($tenantId) : null)
+            ?? auth()->user()?->tenant
+            ?? Tenant::first()
+            ?? Tenant::create(['name' => 'Smartoh Technologies', 'status' => 'active']);
+
         return view('admin.tenant_branding', compact('tenant'));
     }
 
+    /**
+     * System Settings: ISP-specific operational settings.
+     */
     public function systemSettings()
     {
         return view('admin.system_settings');
     }
 
+    /**
+     * Audit Trail Logs: Strictly scoped to actions taken by staff within this ISP tenant.
+     */
     public function auditLogs()
     {
-        $logs = AuditLog::with('user')->latest()->paginate(20);
+        $user = auth()->user();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : $user->tenant_id;
+
+        $query = AuditLog::with('user');
+        if (!$user->isSuperAdmin()) {
+            $query->where('tenant_id', $tenantId);
+        }
+
+        $logs = $query->latest()->paginate(20);
         return view('admin.audit_logs', compact('logs'));
     }
 
+    /**
+     * Mid-Cycle Proration: Under Billing & Invoicing Settings.
+     */
     public function proration(BillingEngine $engine)
     {
-        $plans = BillingPlan::where('is_active', true)->get();
-        $sampleClient = Client::with('billingPlan')->first();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()->tenant_id;
+
+        $plans = BillingPlan::where('tenant_id', $tenantId)->where('is_active', true)->get();
+        if ($plans->isEmpty() && auth()->user()->isSuperAdmin()) {
+            $plans = BillingPlan::where('is_active', true)->get();
+        }
+
+        $sampleClient = Client::where('tenant_id', $tenantId)->with('billingPlan')->first();
 
         return view('admin.proration', compact('plans', 'sampleClient'));
     }
@@ -74,6 +138,12 @@ class AdminPlatformController extends Controller
         $newPlan = BillingPlan::findOrFail($request->new_plan_id);
         $oldPlan = $client->billingPlan ?? $newPlan;
 
+        // Tenant ownership check
+        $user = auth()->user();
+        if (!$user->isSuperAdmin() && $client->tenant_id !== $user->tenant_id) {
+            abort(403, 'Unauthorized cross-tenant client proration request.');
+        }
+
         $calculation = $engine->calculateProration($oldPlan, $newPlan, $client);
         $netAdjustment = $calculation['new_charge'] - $calculation['unused_credit'];
         $calculation['net_adjustment'] = $netAdjustment;
@@ -81,9 +151,17 @@ class AdminPlatformController extends Controller
         return back()->with('proration_result', $calculation)->with('success', "Prorated calculation complete: Net Adjustment KES {$netAdjustment}");
     }
 
+    /**
+     * Subscription & System Quotas (Parity view for /admin/system-plan & /SystemPlan)
+     */
     public function systemPlan()
     {
-        $tenant = app()->bound('current_tenant_id') ? Tenant::find(app('current_tenant_id')) : Tenant::first();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? Tenant::find($tenantId) : null)
+            ?? auth()->user()?->tenant
+            ?? Tenant::first()
+            ?? Tenant::create(['name' => 'Smartoh Technologies', 'status' => 'active']);
+
         return view('admin.system_plan', compact('tenant'));
     }
 }

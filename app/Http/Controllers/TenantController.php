@@ -13,12 +13,19 @@ class TenantController extends Controller
 {
     public function index()
     {
+        if (!auth()->user()->isSuperAdmin()) {
+            abort(403, 'Unauthorized. Tenant management is restricted to Platform Super Administrators.');
+        }
+
         $tenants = Tenant::withCount(['clients', 'mikrotikDevices', 'users'])->get();
         return view('tenants.index', compact('tenants'));
     }
 
     public function store(Request $request)
     {
+        if (!auth()->user()->isSuperAdmin()) {
+            abort(403, 'Unauthorized. Tenant onboarding is restricted to Platform Super Administrators.');
+        }
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'subdomain' => 'required|string|alpha_dash|unique:tenants,subdomain',
@@ -84,6 +91,11 @@ class TenantController extends Controller
 
     public function updateBranding(Request $request, Tenant $tenant)
     {
+        $user = auth()->user();
+        if (!$user->isSuperAdmin() && $user->tenant_id !== $tenant->id) {
+            abort(403, 'Unauthorized. You may only customize your own company branding.');
+        }
+
         $validated = $request->validate([
             'brand_color' => 'required|string',
             'accent_color' => 'required|string',

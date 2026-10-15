@@ -29,6 +29,18 @@ class Client extends Model
         'auto_renew' => 'boolean',
     ];
 
+    public function getFirstNameAttribute(): string
+    {
+        $parts = explode(' ', $this->name ?? '', 2);
+        return $parts[0] ?? '';
+    }
+
+    public function getLastNameAttribute(): string
+    {
+        $parts = explode(' ', $this->name ?? '', 2);
+        return $parts[1] ?? '';
+    }
+
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);

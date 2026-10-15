@@ -53,27 +53,32 @@ class User extends Authenticatable
 
     public function isSuperAdmin(): bool
     {
-        return $this->role === 'super_admin';
+        return in_array(strtolower($this->role), ['super_admin', 'superadmin'], true);
     }
 
     public function isIspAdmin(): bool
     {
-        return $this->role === 'isp_admin';
+        return in_array(strtolower($this->role), ['isp_admin', 'tenant_admin'], true);
+    }
+
+    public function isTenantAdmin(): bool
+    {
+        return $this->isIspAdmin();
     }
 
     public function isTechnician(): bool
     {
-        return $this->role === 'technician';
+        return strtolower($this->role) === 'technician';
     }
 
     public function isBillingOfficer(): bool
     {
-        return $this->role === 'billing_officer';
+        return strtolower($this->role) === 'billing_officer';
     }
 
     public function isClient(): bool
     {
-        return $this->role === 'client';
+        return strtolower($this->role) === 'client';
     }
 
     public function hasRole(string ...$roles): bool
@@ -81,6 +86,22 @@ class User extends Authenticatable
         if ($this->isSuperAdmin()) {
             return true;
         }
-        return in_array($this->role, $roles, true);
+
+        $userRole = strtolower($this->role);
+
+        foreach ($roles as $r) {
+            $checkRole = strtolower($r);
+            if ($userRole === $checkRole) {
+                return true;
+            }
+            if (in_array($checkRole, ['tenant_admin', 'isp_admin'], true) && $this->isTenantAdmin()) {
+                return true;
+            }
+            if (in_array($checkRole, ['super_admin', 'superadmin'], true) && $this->isSuperAdmin()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

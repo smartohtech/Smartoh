@@ -17,6 +17,9 @@ class AuditLog extends Model
         'new_values',
         'ip_address',
         'user_agent',
+        'previous_hash',
+        'integrity_hash',
+        'support_access_reason',
         'action',
         'details',
     ];
@@ -25,6 +28,30 @@ class AuditLog extends Model
         'old_values' => 'array',
         'new_values' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (AuditLog $log) {
+            if (empty($log->integrity_hash)) {
+                $prev = static::query()
+                    ->when($log->tenant_id, fn($q) => $q->where('tenant_id', $log->tenant_id))
+                    ->latest('id')
+                    ->value('integrity_hash') ?? 'GENESIS';
+
+                $log->previous_hash = $prev;
+                $payload = implode('|', [
+                    $prev,
+                    (string) ($log->tenant_id ?? '0'),
+                    (string) ($log->user_id ?? '0'),
+                    (string) ($log->event ?? ''),
+                    (string) ($log->auditable_type ?? ''),
+                    (string) ($log->auditable_id ?? ''),
+                    json_encode($log->new_values ?? []),
+                ]);
+                $log->integrity_hash = hash('sha256', $payload);
+            }
+        });
+    }
 
     public function setActionAttribute($value): void
     {

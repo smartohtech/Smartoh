@@ -73,9 +73,29 @@ class PlatformTenantController extends Controller
         return back()->with('success', "Tenant '{$tenant->name}' has been successfully reinstated to active status.");
     }
 
-    public function impersonate(Tenant $tenant)
+    public function impersonate(Request $request, Tenant $tenant)
     {
-        session(['admin_active_tenant_id' => $tenant->id]);
-        return redirect()->route('dashboard')->with('info', "Viewing workspace for '{$tenant->name}' as Super Admin.");
+        $reason = $request->input('reason', 'Authorized Platform Support & Diagnostics');
+        session([
+            'admin_active_tenant_id' => $tenant->id,
+            'admin_support_reason'   => $reason,
+        ]);
+
+        AuditLog::create([
+            'tenant_id'             => $tenant->id,
+            'user_id'               => $request->user()?->id,
+            'event'                 => 'platform.support_access_granted',
+            'auditable_type'        => Tenant::class,
+            'auditable_id'          => $tenant->id,
+            'support_access_reason' => $reason,
+            'new_values'            => [
+                'tenant_name' => $tenant->name,
+                'reason'      => $reason,
+                'admin_email' => $request->user()?->email,
+            ],
+            'ip_address'            => $request->ip(),
+        ]);
+
+        return redirect()->route('dashboard')->with('info', "Audited Support Session active for '{$tenant->name}' (Reason: {$reason}).");
     }
 }

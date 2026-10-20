@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('payment_gateways', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained('tenants')->cascadeOnDelete();
-            $table->enum('provider', ['mpesa_daraja', 'stripe', 'pesapal', 'flutterwave', 'paystack', 'bank_manual']);
+            $table->string('provider', 50); // mpesa_daraja, mpesa_c2b, mpesa_till, pochi_la_biashara, pesapal, paypal, stripe, flutterwave, paystack, bank_manual, manual_cash
             $table->string('name');
             $table->boolean('is_active')->default(true);
             $table->boolean('is_sandbox')->default(true);
@@ -58,11 +58,7 @@ return new class extends Migration
             $table->foreignId('payment_gateway_id')->nullable()->constrained('payment_gateways')->nullOnDelete();
             $table->string('transaction_reference')->unique();
             $table->string('external_transaction_id')->nullable()->index(); // e.g. M-Pesa Receipt Number "QGH678912"
-            $table->enum('payment_method', [
-                'mpesa_stk', 'mpesa_c2b', 'mpesa_till', 'mpesa_paybill',
-                'stripe_card', 'pesapal', 'flutterwave', 'paystack',
-                'bank_transfer', 'cash', 'voucher', 'wallet_debit'
-            ]);
+            $table->string('payment_method', 50); // mpesa_stk, mpesa_c2b, mpesa_till, mpesa_paybill, pochi_la_biashara, pesapal, paypal, stripe_card, bank_transfer, cash, voucher, wallet_debit
             $table->decimal('amount', 12, 2);
             $table->string('currency', 3)->default('KES');
             $table->string('phone_number')->nullable();

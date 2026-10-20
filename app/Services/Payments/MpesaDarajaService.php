@@ -2,7 +2,6 @@
 
 namespace App\Services\Payments;
 
-use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -13,8 +12,13 @@ use Illuminate\Support\Str;
 
 class MpesaDarajaService
 {
+    public function __construct(
+        protected PaymentOrchestratorService $orchestrator
+    ) {}
+
     /**
-     * Initiate M-Pesa STK Push (Lipa na M-Pesa Online)
+     * Initiate M-Pesa STK Push (Lipa na M-Pesa Online) directly using the ISP's own authorized shortcode.
+     * Displays 'Payment pending verification' until provider callback or status query confirms it.
      */
     public function initiateStkPush(Client $client, float $amount, ?Invoice $invoice = null, ?PaymentGateway $gateway = null): array
     {
@@ -25,41 +29,61 @@ class MpesaDarajaService
             $phone = substr($phone, 1);
         }
 
+        if (!$gateway) {
+            $gateway = PaymentGateway::withoutGlobalScopes()
+                ->where('tenant_id', $client->tenant_id)
+                ->whereIn('provider', ['mpesa_daraja', 'mpesa_c2b', 'mpesa_till'])
+                ->where('is_active', true)
+                ->first();
+        }
+
         $reference = 'SMART-' . strtoupper(Str::random(8));
         $checkoutRequestId = 'ws_CO_' . date('dmYHis') . '_' . rand(1000, 9999);
 
-        // Record pending payment
-        $payment = Payment::create([
-            'tenant_id' => $client->tenant_id,
-            'site_id' => $client->site_id,
-            'client_id' => $client->id,
-            'invoice_id' => $invoice?->id,
-            'payment_gateway_id' => $gateway?->id,
-            'transaction_reference' => $reference,
+        $payment = Payment::withoutGlobalScopes()->create([
+            'tenant_id'               => $client->tenant_id,
+            'site_id'                 => $client->site_id,
+            'client_id'               => $client->id,
+            'invoice_id'              => $invoice?->id,
+            'payment_gateway_id'      => $gateway?->id,
+            'transaction_reference'   => $reference,
             'external_transaction_id' => $checkoutRequestId,
-            'payment_method' => 'mpesa_stk',
-            'amount' => $amount,
-            'currency' => 'KES',
-            'phone_number' => $phone,
-            'payer_name' => $client->name,
-            'status' => 'pending',
-            'idempotency_key' => $checkoutRequestId,
-            'raw_payload' => json_encode(['CheckoutRequestID' => $checkoutRequestId, 'Amount' => $amount, 'Phone' => $phone]),
+            'payment_method'          => 'mpesa_stk',
+            'source_channel'          => 'stk_callback',
+            'amount'                  => $amount,
+            'allocated_amount'        => 0,
+            'unallocated_amount'      => $amount,
+            'currency'                => 'KES',
+            'phone_number'            => $phone,
+            'account_reference'       => $invoice?->invoice_number ?? $client->account_number,
+            'payer_name'              => $client->name,
+            'status'                  => 'pending',
+            'verification_status'     => 'pending_verification',
+            'reconciliation_status'   => 'unreconciled',
+            'settlement_status'       => 'pending_settlement',
+            'activation_status'       => 'not_started',
+            'idempotency_key'         => $checkoutRequestId,
+            'raw_payload'             => json_encode([
+                'CheckoutRequestID' => $checkoutRequestId,
+                'Amount'            => $amount,
+                'Phone'             => $phone,
+                'Shortcode'         => $gateway?->shortcode ?? 'ISP-PAYBILL',
+            ]),
         ]);
 
         Log::info("M-Pesa STK Push initiated for {$phone} - Amount: {$amount} - Ref: {$reference}");
 
         return [
-            'success' => true,
-            'message' => "STK Push prompted on phone {$phone}. Please enter your M-Pesa PIN.",
+            'success'             => true,
+            'message'             => "STK Push prompted on phone {$phone}. Payment pending verification.",
             'checkout_request_id' => $checkoutRequestId,
-            'reference' => $reference,
-            'payment_id' => $payment->id,
+            'reference'           => $reference,
+            'payment_id'          => $payment->id,
         ];
     }
 
     /**
-     * Reconcile callback with idempotency locking and client reactivation
+     * Reconcile callback with idempotency locking, multi-invoice allocation, and immediate network activation.
      */
     public function processCallback(array $callbackData): array
     {
@@ -72,66 +96,79 @@ class MpesaDarajaService
                 return ['success' => false, 'message' => 'Missing CheckoutRequestID'];
             }
 
-            $payment = Payment::where('external_transaction_id', $checkoutRequestId)->lockForUpdate()->first();
+            $payment = Payment::withoutGlobalScopes()
+                ->where(function ($q) use ($checkoutRequestId) {
+                    $q->where('external_transaction_id', $checkoutRequestId)
+                      ->orWhere('idempotency_key', $checkoutRequestId);
+                })
+                ->lockForUpdate()
+                ->first();
 
             if (!$payment) {
                 return ['success' => false, 'message' => 'Payment transaction not found'];
             }
 
-            if ($payment->status === 'completed') {
-                return ['success' => true, 'message' => 'Payment was already reconciled'];
+            if ($payment->status === 'completed' && $payment->verification_status === 'verified') {
+                return [
+                    'success'      => true,
+                    'is_duplicate' => true,
+                    'message'      => 'Payment was already reconciled',
+                    'receipt'      => $payment->external_transaction_id,
+                    'payment_id'   => $payment->id,
+                ];
             }
 
             if ($resultCode == 0) {
-                // Success
                 $items = $callbackData['Body']['stkCallback']['CallbackMetadata']['Item'] ?? [];
                 $receiptNumber = 'QGH' . rand(1000000, 9999999);
+                $amount = (float) $payment->amount;
+                $phone = $payment->phone_number;
+
                 foreach ($items as $item) {
                     if (($item['Name'] ?? '') === 'MpesaReceiptNumber') {
-                        $receiptNumber = $item['Value'];
+                        $receiptNumber = (string) $item['Value'];
+                    }
+                    if (($item['Name'] ?? '') === 'Amount' && !empty($item['Value'])) {
+                        $amount = (float) $item['Value'];
+                    }
+                    if (($item['Name'] ?? '') === 'PhoneNumber' && !empty($item['Value'])) {
+                        $phone = (string) $item['Value'];
                     }
                 }
 
-                $payment->update([
-                    'status' => 'completed',
-                    'external_transaction_id' => $receiptNumber,
-                    'paid_at' => now(),
-                    'raw_payload' => json_encode($callbackData),
-                ]);
+                $reconciled = $this->orchestrator->recordAndReconcileVerifiedPayment(
+                    $payment->tenant_id,
+                    [
+                        'event_id'                => $receiptNumber,
+                        'external_transaction_id' => $receiptNumber,
+                        'checkout_request_id'     => $checkoutRequestId,
+                        'internal_reference'      => $payment->transaction_reference,
+                        'account_reference'       => $payment->account_reference,
+                        'amount'                  => $amount,
+                        'currency'                => $payment->currency ?: 'KES',
+                        'phone_number'            => $phone,
+                        'payer_name'              => $payment->payer_name,
+                        'status'                  => 'verified',
+                        'settlement_status'       => 'direct_to_isp_merchant',
+                        'payment_method'          => 'mpesa_stk',
+                        'source_channel'          => 'stk_callback',
+                    ],
+                    $callbackData
+                );
 
-                // Update invoice
-                if ($payment->invoice) {
-                    $invoice = $payment->invoice;
-                    $newPaid = $invoice->paid_amount + $payment->amount;
-                    $status = $newPaid >= $invoice->total_amount ? 'paid' : 'partially_paid';
-                    $invoice->update(['paid_amount' => $newPaid, 'status' => $status]);
-                }
-
-                // Update subscriber balance & reactivate if suspended
-                if ($payment->client) {
-                    $client = $payment->client;
-                    $client->update([
-                        'wallet_balance' => $client->wallet_balance + $payment->amount,
-                        'status' => 'active',
-                        'current_cycle_start' => now(),
-                        'current_cycle_end' => now()->addDays($client->billingPlan?->validity_days ?: 30),
-                        'service_suspended_at' => null,
-                    ]);
-                }
-
-                AuditLog::create([
-                    'tenant_id' => $payment->tenant_id,
-                    'user_id' => null,
-                    'event' => 'payment.reconciled',
-                    'auditable_type' => Payment::class,
-                    'auditable_id' => $payment->id,
-                    'new_values' => ['receipt' => $receiptNumber, 'amount' => $payment->amount],
-                    'ip_address' => request()->ip(),
-                ]);
-
-                return ['success' => true, 'receipt' => $receiptNumber];
+                return [
+                    'success'      => true,
+                    'receipt'      => $receiptNumber,
+                    'payment_id'   => $reconciled->id,
+                    'activation'   => $reconciled->activation_status,
+                    'human_status' => $reconciled->human_lifecycle_status,
+                ];
             } else {
-                $payment->update(['status' => 'failed', 'raw_payload' => json_encode($callbackData)]);
+                $payment->update([
+                    'status'              => 'failed',
+                    'verification_status' => 'rejected',
+                    'raw_payload'         => json_encode($callbackData),
+                ]);
                 return ['success' => false, 'message' => $resultDesc];
             }
         });

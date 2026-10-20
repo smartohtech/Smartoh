@@ -1,7 +1,18 @@
 <?php
 
+use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\UdieApiController;
 use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Non-Custodial Payment Provider Webhooks & Real-Time Callbacks
+|--------------------------------------------------------------------------
+*/
+Route::prefix('webhooks/payments')->middleware('throttle:120,1')->group(function () {
+    Route::post('/mpesa/validation', [PaymentWebhookController::class, 'handleMpesaValidation'])->name('webhooks.mpesa.validation');
+    Route::post('/{provider}/{tenantId?}', [PaymentWebhookController::class, 'handleWebhook'])->name('webhooks.payments.receive');
+});
 
 /*
 |--------------------------------------------------------------------------

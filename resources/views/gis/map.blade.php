@@ -4,31 +4,31 @@
 <div class="space-y-6">
 
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-white">GIS Fiber Infrastructure & Subscriber Network Map</h1>
-            <p class="text-xs text-slate-400 mt-0.5">Geospatial fiber routes, Fiber Access Terminals (FAT boxes), and customer drops.</p>
+            <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">GIS Fiber Infrastructure &amp; Subscriber Network Map</h1>
+            <p class="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 mt-1">Geospatial fiber routes, Fiber Access Terminals (FAT boxes), and customer drops.</p>
         </div>
         <div class="flex items-center space-x-2">
-            <a href="{{ route('gis.jobs') }}" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition">
+            <a href="{{ route('gis.jobs') }}" class="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 transition">
                 <span>View Field Work Orders</span>
             </a>
         </div>
     </div>
 
     <!-- Map Container Card -->
-    <div class="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-4 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden p-4 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs font-mono font-semibold text-slate-700 dark:text-slate-200">
             <div class="flex items-center space-x-4">
                 <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-blue-500"></span><span>POP / Core Site</span></span>
                 <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><span>FAT Distribution Box</span></span>
                 <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-cyan-400"></span><span>Subscriber Drop</span></span>
                 <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-amber-400"></span><span>Scheduled Installation</span></span>
             </div>
-            <div class="text-slate-400">Geospatial CRS: EPSG:4326 (WGS 84)</div>
+            <div class="text-slate-600 dark:text-slate-400">Geospatial CRS: EPSG:4326 (WGS 84)</div>
         </div>
 
-        <div id="gisMap" class="w-full h-[580px] rounded-xl border border-slate-800 z-10"></div>
+        <div id="gisMap" class="w-full h-[580px] rounded-xl border border-slate-200 dark:border-slate-800 z-10"></div>
     </div>
 
 </div>

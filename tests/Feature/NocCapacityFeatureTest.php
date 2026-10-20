@@ -13,8 +13,21 @@ class NocCapacityFeatureTest extends TestCase
 {
     protected function getSuperAdmin(): User
     {
-        return User::where('role', 'super_admin')->first() 
-            ?? User::first();
+        $tenant = Tenant::first() ?? Tenant::create([
+            'name'   => 'Smartoh Technologies',
+            'status' => 'active',
+        ]);
+
+        return User::where('role', 'super_admin')->first()
+            ?? User::first()
+            ?? User::create([
+                'name'        => 'Super Admin',
+                'email'       => 'admin@smartoh.net',
+                'password'    => bcrypt('password'),
+                'role'        => 'super_admin',
+                'tenant_id'   => $tenant->id,
+                'is_approved' => true,
+            ]);
     }
 
     public function test_noc_section_renders_isp_capacity_and_realtime_metrics(): void

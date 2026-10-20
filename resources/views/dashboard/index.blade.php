@@ -4,28 +4,44 @@
 <div class="space-y-6 max-w-[1600px] mx-auto">
 
     <!-- Top Headline Banner -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+    @php
+        $hour = (int) now()->timezone('Africa/Nairobi')->format('H');
+        $initialGreeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
+        $ispUserName = auth()->check() ? explode(' ', trim(auth()->user()->name))[0] : ($currentTenant->name ?? 'Partner');
+        $ispTenantName = $currentTenant->name ?? (auth()->user()->name ?? 'ISP Network');
+    @endphp
+    <div x-data="{
+            greeting: '{{ $initialGreeting }}',
+            userName: '{{ addslashes($ispUserName) }}',
+            currentTime: '',
+            updateGreeting() {
+                const now = new Date();
+                const hr = now.getHours();
+                if (hr < 12) {
+                    this.greeting = 'Good Morning';
+                } else if (hr < 17) {
+                    this.greeting = 'Good Afternoon';
+                } else {
+                    this.greeting = 'Good Evening';
+                }
+                this.currentTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+        }"
+        x-init="updateGreeting(); setInterval(() => updateGreeting(), 30000)"
+        class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
         <div class="flex items-center space-x-3.5">
-            <img src="{{ asset('images/smartoh_logo.jpeg') }}" alt="Smartoh Technologies" class="w-12 h-12 rounded-xl object-contain bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-1 shadow-sm shrink-0">
+            <img src="{{ !empty($currentTenant?->logo_url) ? $currentTenant->logo_url : asset('images/smartoh_logo.jpeg') }}" alt="{{ $ispTenantName }}" class="w-12 h-12 rounded-xl object-contain bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-1 shadow-sm shrink-0">
             <div>
-                <div class="flex items-center space-x-2">
-                    <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider font-mono">Operations Command</span>
+                <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                    <span class="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider font-mono">{{ $ispTenantName }}</span>
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-mono">Live Telemetry Active</span>
+                    <span x-show="currentTime" x-cloak class="text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400" x-text="'• ' + currentTime"></span>
                 </div>
-                <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white mt-0.5">Smartoh Technologies Dashboard</h1>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Real-time network client monitoring, revenue analytics, and remote device management.</p>
+                <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-0.5">
+                    <span x-text="greeting + ', ' + userName">{{ $initialGreeting }}, {{ $ispUserName }}</span> 👋
+                </h1>
+                <p class="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">Real-time network client monitoring, revenue analytics, and remote device management.</p>
             </div>
-        </div>
-
-        <div class="flex items-center space-x-2 self-start sm:self-auto">
-            <a href="{{ route('clients.index') }}" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-blue-600/20 flex items-center space-x-1.5 transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                <span>Add Subscriber</span>
-            </a>
-            <a href="{{ route('billing.payments') }}" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                <span>Trigger M-Pesa STK</span>
-            </a>
         </div>
     </div>
 
@@ -115,45 +131,44 @@
         $staffCount = $tenantUsage->active_staff_count ?? 1;
         $staffPct = min(100, round(($staffCount / max(1, $staffLimit)) * 100));
     @endphp
-    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
-        <div class="absolute -right-12 -top-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10 mb-4 pb-4 border-b border-indigo-500/20">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm relative overflow-hidden">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10 mb-4 pb-4 border-b border-slate-200 dark:border-slate-800">
             <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-300">
+                <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-600/30 border border-blue-200 dark:border-blue-400/30 flex items-center justify-center text-blue-600 dark:text-blue-300">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
                 </div>
                 <div>
                     <div class="flex items-center space-x-2">
-                        <span class="text-xs font-mono uppercase tracking-wider text-indigo-300">SaaS Plan Quotas</span>
+                        <span class="text-xs font-mono font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">SaaS Plan Quotas</span>
                         <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
-                            {{ in_array($tenantSub->status, ['active_paid']) ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : '' }}
-                            {{ in_array($tenantSub->status, ['trial_active', 'trial_expiring']) ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : '' }}
-                            {{ in_array($tenantSub->status, ['trial_expired', 'past_due', 'grace_period', 'payment_pending']) ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : '' }}
+                            {{ in_array($tenantSub->status, ['active_paid']) ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30' : '' }}
+                            {{ in_array($tenantSub->status, ['trial_active', 'trial_expiring']) ? 'bg-cyan-50 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30' : '' }}
+                            {{ in_array($tenantSub->status, ['trial_expired', 'past_due', 'grace_period', 'payment_pending']) ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30' : '' }}
                         ">
                             {{ str_replace('_', ' ', $tenantSub->status) }}
                         </span>
                     </div>
-                    <h3 class="text-base font-bold text-white">{{ $tenantSub->plan->name ?? 'Custom Tier' }}</h3>
+                    <h3 class="text-base font-extrabold text-slate-900 dark:text-white">{{ $tenantSub->plan->name ?? 'Custom Tier' }}</h3>
                 </div>
             </div>
 
             <div class="flex items-center space-x-3">
                 @if(in_array($tenantSub->status, ['trial_active', 'trial_expiring']))
                     <div class="text-right">
-                        <p class="text-[11px] text-indigo-200">Free Trial Remaining</p>
-                        <p class="text-sm font-bold font-mono text-cyan-300">
+                        <p class="text-[11px] font-medium text-slate-600 dark:text-indigo-200">Free Trial Remaining</p>
+                        <p class="text-sm font-bold font-mono text-cyan-600 dark:text-cyan-300">
                             {{ $tenantSub->daysRemainingInTrial() > 0 ? $tenantSub->daysRemainingInTrial() . ' Days' : $tenantSub->hoursRemainingInTrial() . ' Hours' }}
                         </p>
                     </div>
                 @elseif($tenantSub->status === 'active_paid')
                     <div class="text-right">
-                        <p class="text-[11px] text-indigo-200">Renewal Cycle</p>
-                        <p class="text-sm font-bold font-mono text-emerald-300">
+                        <p class="text-[11px] font-medium text-slate-600 dark:text-indigo-200">Renewal Cycle</p>
+                        <p class="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-300">
                             {{ $tenantSub->current_period_end ? $tenantSub->current_period_end->format('M d, Y') : 'Active' }}
                         </p>
                     </div>
                 @endif
-                <a href="{{ route('billing.subscription') }}" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center space-x-1 shrink-0">
+                <a href="{{ route('billing.subscription') }}" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center space-x-1 shrink-0">
                     <span>Manage Plan &amp; Quotas</span>
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </a>
@@ -162,45 +177,45 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <!-- Active Subscribers Quota -->
-            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+            <div class="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800">
                 <div class="flex justify-between items-center text-xs mb-1.5">
-                    <span class="text-indigo-200">Active Subscribers</span>
-                    <span class="font-bold font-mono {{ $subPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $subCount }} / {{ $subLimit }}</span>
+                    <span class="font-semibold text-slate-700 dark:text-indigo-200">Active Subscribers</span>
+                    <span class="font-bold font-mono {{ $subPct >= 90 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white' }}">{{ $subCount }} / {{ $subLimit }}</span>
                 </div>
-                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div class="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-500 {{ $subPct >= 90 ? 'bg-rose-500' : 'bg-blue-500' }}" style="width: {{ $subPct }}%"></div>
                 </div>
-                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1.5 flex justify-between">
                     <span>{{ $subPct }}% used</span>
                     <span>{{ max(0, $subLimit - $subCount) }} slots available</span>
                 </div>
             </div>
 
             <!-- Managed Routers Quota -->
-            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+            <div class="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800">
                 <div class="flex justify-between items-center text-xs mb-1.5">
-                    <span class="text-indigo-200">Routers &amp; OLTs</span>
-                    <span class="font-bold font-mono {{ $devPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $devCount }} / {{ $devLimit }}</span>
+                    <span class="font-semibold text-slate-700 dark:text-indigo-200">Routers &amp; OLTs</span>
+                    <span class="font-bold font-mono {{ $devPct >= 90 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white' }}">{{ $devCount }} / {{ $devLimit }}</span>
                 </div>
-                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div class="h-full rounded-full transition-all duration-500 {{ $devPct >= 90 ? 'bg-rose-500' : 'bg-indigo-400' }}" style="width: {{ $devPct }}%"></div>
+                <div class="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 {{ $devPct >= 90 ? 'bg-rose-500' : 'bg-indigo-500' }}" style="width: {{ $devPct }}%"></div>
                 </div>
-                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1.5 flex justify-between">
                     <span>{{ $devPct }}% used</span>
                     <span>{{ max(0, $devLimit - $devCount) }} devices available</span>
                 </div>
             </div>
 
             <!-- Staff Accounts Quota -->
-            <div class="bg-white/5 rounded-xl p-3 border border-white/5">
+            <div class="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800">
                 <div class="flex justify-between items-center text-xs mb-1.5">
-                    <span class="text-indigo-200">Staff Accounts</span>
-                    <span class="font-bold font-mono {{ $staffPct >= 90 ? 'text-rose-400' : 'text-white' }}">{{ $staffCount }} / {{ $staffLimit }}</span>
+                    <span class="font-semibold text-slate-700 dark:text-indigo-200">Staff Accounts</span>
+                    <span class="font-bold font-mono {{ $staffPct >= 90 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white' }}">{{ $staffCount }} / {{ $staffLimit }}</span>
                 </div>
-                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div class="h-full rounded-full transition-all duration-500 {{ $staffPct >= 90 ? 'bg-rose-500' : 'bg-emerald-400' }}" style="width: {{ $staffPct }}%"></div>
+                <div class="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 {{ $staffPct >= 90 ? 'bg-rose-500' : 'bg-emerald-500' }}" style="width: {{ $staffPct }}%"></div>
                 </div>
-                <div class="text-[10px] text-indigo-300/70 mt-1 flex justify-between">
+                <div class="text-[10px] font-medium text-slate-600 dark:text-slate-300 mt-1.5 flex justify-between">
                     <span>{{ $staffPct }}% used</span>
                     <span>{{ max(0, $staffLimit - $staffCount) }} seats available</span>
                 </div>

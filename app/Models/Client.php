@@ -13,20 +13,21 @@ class Client extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'site_id', 'billing_plan_id', 'reseller_id',
+        'tenant_id', 'site_id', 'mikrotik_device_id', 'billing_plan_id', 'reseller_id',
         'account_number', 'name', 'email', 'phone', 'id_passport_number',
         'address', 'latitude', 'longitude', 'service_type',
         'pppoe_username', 'pppoe_password', 'assigned_ip', 'mac_address',
-        'status', 'wallet_balance', 'data_usage_bytes', 'current_cycle_start',
-        'current_cycle_end', 'service_suspended_at', 'auto_renew'
+        'status', 'connection_status', 'wallet_balance', 'data_usage_bytes', 'current_cycle_start',
+        'current_cycle_end', 'service_suspended_at', 'last_activated_at', 'auto_renew'
     ];
 
     protected $casts = [
-        'wallet_balance' => 'decimal:2',
-        'current_cycle_start' => 'datetime',
-        'current_cycle_end' => 'datetime',
+        'wallet_balance'       => 'decimal:2',
+        'current_cycle_start'  => 'datetime',
+        'current_cycle_end'    => 'datetime',
         'service_suspended_at' => 'datetime',
-        'auto_renew' => 'boolean',
+        'last_activated_at'    => 'datetime',
+        'auto_renew'           => 'boolean',
     ];
 
     public function getFirstNameAttribute(): string
@@ -46,6 +47,11 @@ class Client extends Model
         return $this->belongsTo(Site::class);
     }
 
+    public function mikrotikDevice(): BelongsTo
+    {
+        return $this->belongsTo(MikroTikDevice::class, 'mikrotik_device_id');
+    }
+
     public function billingPlan(): BelongsTo
     {
         return $this->belongsTo(BillingPlan::class);
@@ -59,6 +65,16 @@ class Client extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function activationJobs(): HasMany
+    {
+        return $this->hasMany(NetworkActivationJob::class);
+    }
+
+    public function latestActivationJob(): HasOne
+    {
+        return $this->hasOne(NetworkActivationJob::class)->latestOfMany();
     }
 
     public function supportTickets(): HasMany
@@ -79,5 +95,14 @@ class Client extends Model
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    public function getOutstandingBalanceAttribute(): float
+    {
+        $unpaid = $this->invoices()
+            ->whereIn('status', ['unpaid', 'partially_paid', 'overdue'])
+            ->get()
+            ->sum(fn($inv) => max(0, (float)$inv->total_amount - (float)$inv->paid_amount));
+        return round((float)$unpaid, 2);
     }
 }

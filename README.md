@@ -1,59 +1,84 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Smartoh Technologies — Real-Time Non-Custodial Multitenant ISP Billing & Network Activation Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## 1. Architectural Overview & Non-Custodial Principles
 
-## About Laravel
+Smartoh Technologies acts strictly as a **non-custodial billing, reconciliation, and network activation orchestration platform**:
+- **Direct ISP Merchant Settlement**: Every ISP tenant connects its own authorized Safaricom M-Pesa Daraja Paybill, Buy Goods Till, Pesapal v3 merchant account, PayPal Commerce v2 account, or direct Bank IPN/Statement feed. Subscriber payments settle directly into the ISP's own merchant utility or bank account.
+- **Zero Smartoh Holding Period**: Smartoh never pools funds across ISPs, routes subscriber collections into a Smartoh-owned wallet, or imposes an artificial waiting window before notifying the ISP or activating a subscriber.
+- **Immediate Payment-to-Connectivity Pipeline**:
+  1. Receive provider webhook/callback (`/api/webhooks/payments/{provider}/{tenantId?}`) or STK callback.
+  2. Validate provider webhook signature (`X-Mpesa-Signature`, `X-Pesapal-Signature`, `PAYPAL-TRANSMISSION-SIG`, or `X-Bank-Signature`) and enforce replay/idempotency locking via `payment_webhook_events` and `payments.idempotency_key`.
+  3. Resolve the exact ISP tenant, subscriber (`Client`), unpaid/overdue `Invoice`(s), and `BillingPlan`.
+  4. Record durable `Payment` and `PaymentAllocation` entries inside an atomic database transaction (supporting partial payments, multi-invoice allocation, and wallet overpayments).
+  5. Immediately enqueue and execute a `NetworkActivationJob` via `NetworkActivationOrchestrator` and `MikroTikService` without waiting for a scheduled batch.
+  6. Apply targeted PPPoE, Hotspot, RADIUS CoA, or Static-IP updates on the ISP's router and verify the resulting network state.
+  7. Stream real-time updates to the ISP dashboard (`/billing/payments/live-feed` via SSE/JSON) and Customer Portal (`/portal/live-status`).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 2. Accurate Lifecycle & Status Reporting
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Smartoh strictly separates payment verification, provider settlement, and router connectivity states:
+- `Payment pending verification` — STK Push initiated or checkout opened; awaiting trusted provider confirmation.
+- `Unverified manual reference — pending review` — Customer submitted a manual reference/screenshot claim; queued in `payment_reconciliation_exceptions` and **never** auto-activates service.
+- `Payment verified — activation queued` — Provider confirmed payment; network job queued.
+- `Payment received — activation retrying` — Payment verified and preserved, but the router/RADIUS server is temporarily offline; retrying automatically with exponential backoff (`30s, 60s, 120s, 240s, 480s`) and raising a critical `NOCIncident` if retries exhaust.
+- `Payment verified — activation applied` — Router configuration updated; awaiting session verification.
+- `Connected` (`connected_verified`) — Only displayed when router/RADIUS session or queue state is confirmed active.
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## 3. Provider-Specific Capabilities & Limitations Disclosure
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Provider / Account Type | Settlement Destination | Real-Time Webhook API | Disclosed Limitations & Reconciliation Mode |
+| :--- | :--- | :--- | :--- |
+| **M-Pesa Daraja (Paybill & Buy Goods Till)** | Direct to ISP's M-Pesa Merchant Utility Account | Yes (STK Callback & C2B Confirmation) | Instant settlement & activation. Requires Safaricom Daraja C2B/STK production credentials. |
+| **Pochi la Biashara** | Direct to ISP Owner's Pochi Wallet | Only if registered on Daraja Business API | Standard personal Pochi la Biashara numbers do **not** offer public real-time webhooks. Supported via verified M-Pesa CSV Statement Import or manual exception review. |
+| **Pesapal API v3.0** | ISP's Pesapal Merchant Account | Yes (Instant IPN v3 Callback) | Real-time IPN triggers immediate subscriber activation, but Pesapal settles funds to the ISP's bank/mobile account on a **T+1 provider settlement cycle**. Smartoh marks callbacks as `pending_provider_settlement` until settled. |
+| **PayPal Commerce v2** | Direct to ISP's PayPal Business Account | Yes (Signed Webhook Events) | Subject to PayPal merchant reserve holds on new accounts or international cards. |
+| **Bank Accounts (Equity, KCB, Co-op, NCBA)** | Direct to ISP's Corporate Bank Account | Supported where Bank IPN is enabled | For bank accounts without an API/IPN agreement, Smartoh provides controlled CSV Statement Import (`/billing/payments/import-statement`) and an Exception Queue. |
 
-## Laravel Sponsors
+---
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## 4. Network Activation & Router Safety Rules
 
-### Premium Partners
+Implemented in `App\Services\MikroTik\MikroTikService` and `App\Services\Network\NetworkActivationOrchestrator`:
+- **PPPoE**: Enables the subscriber's `/ppp secret`, assigns the purchased `BillingPlan` profile, removes only the subscriber's IP from `Smartoh_Suspended` address-list, and refreshes only restricted/walled-garden sessions.
+- **Hotspot**: Restores the user/voucher profile and removes blocked MAC bindings without resetting legitimate data quotas.
+- **Static-IP / DHCP**: Removes only the subscriber's IP from `Smartoh_Suspended` and updates the subscriber's `/queue simple` rate-limit while preserving IP assignments and firewall policies.
+- **RADIUS CoA**: Dispatches targeted `CoA-Request` / rate-limit updates (`Mikrotik-Rate-Limit`).
+- **Safety Guarantees**: Smartoh never reboots a router or disables unrelated firewall rules to activate or restrict a subscriber. Payment reversals trigger a controlled reassessment of that single subscriber's eligibility—never an indiscriminate network-wide disconnection.
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+---
 
-## Contributing
+## 5. Strict Multitenancy, Security & Separate SaaS Billing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- **Tenant Isolation**: Enforced server-side via `TenantResolutionMiddleware`, `BelongsToTenant` global scopes, encrypted `credentials_encrypted` in `payment_gateways` (with masked display via `masked_credentials`), and tenant-bound webhook verification.
+- **Super Admin Privacy Guard**: Ordinary Super Admin views cannot browse individual ISP subscriber payment ledgers (`/billing/payments` returns `403 Forbidden` unless an explicit, audited support session is initiated via `/platform/tenants/{tenant}/impersonate`, which records a tamper-evident SHA-256 hash chain entry in `audit_logs`).
+- **Separate SaaS Billing**: ISP subscription payments to Smartoh (`SaasPayment` / `SubscriptionLifecycleService`) update only that ISP's `SaasSubscription` state (`ACTIVE_PAID`) and never alter or reconnect individual ISP subscriber accounts.
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## 6. Deployment, Monitoring & Rollback Procedures
 
-## Security Vulnerabilities
+### Deployment & Setup
+```bash
+composer install --optimize-autoloader
+cp .env.example .env
+php artisan key:generate
+php artisan migrate --force
+npm install && npm run build
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### Background Worker & Scheduled Recovery
+Run the queue listener and schedule the activation retry & expiry recovery command (`ReconcileAndActivateRetriesCommand`):
+```bash
+php artisan queue:listen --tries=3 --timeout=60
+php artisan smartoh:reconcile-and-activate
+```
 
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Rollback Procedure
+To roll back the real-time non-custodial schema additions safely without losing core tenant/subscriber tables:
+```bash
+php artisan migrate:rollback --step=1
+```

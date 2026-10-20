@@ -22,7 +22,17 @@
                         <h1 class="text-xl sm:text-2xl font-bold text-white tracking-tight">
                             Welcome back, {{ $client->first_name }} {{ $client->last_name }}
                         </h1>
-                        @if($client->status === 'active')
+                        @if($client->status === 'active' && $client->connection_status === 'online')
+                        <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span>Connected (Service Active)</span>
+                        </span>
+                        @elseif($client->connection_status === 'activation_retrying')
+                        <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                            <span>Payment received — activation retrying</span>
+                        </span>
+                        @elseif($client->status === 'active')
                         <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
                             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                             <span>Service Active</span>
@@ -44,6 +54,10 @@
                         <div>PPPoE User: <span class="text-cyan-400">{{ $client->pppoe_username ?? 'dhcp-client' }}</span></div>
                         <span>•</span>
                         <div>Plan: <span class="text-white font-medium">{{ $client->billingPlan?->name ?? 'Standard Home Fiber' }}</span></div>
+                        @if(isset($latestPayment) && $latestPayment)
+                        <span>•</span>
+                        <div>Latest Payment: <span class="text-emerald-400">{{ $latestPayment->human_lifecycle_status }}</span></div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -340,7 +354,7 @@
                         <span>Automated Instant Reconnection</span>
                     </div>
                     <div class="text-[11px] text-slate-300">
-                        Once you enter your M-Pesa PIN, your PPPoE session will be renewed and bandwidth restored within 5 seconds.
+                        As soon as Safaricom confirms your M-Pesa PIN, Smartoh immediately reconciles your bill and triggers router/RADIUS activation with zero artificial waiting period.
                     </div>
                 </div>
 

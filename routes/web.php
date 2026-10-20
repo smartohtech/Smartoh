@@ -60,6 +60,9 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     Route::prefix('clients')->name('clients.')->group(function () {
         Route::get('/', [ClientController::class, 'index'])->name('index');
         Route::post('/', [ClientController::class, 'store'])->name('store');
+        Route::get('/export', [ClientController::class, 'export'])->name('export');
+        Route::post('/import', [ClientController::class, 'import'])->name('import');
+        Route::post('/restore-connections', [ClientController::class, 'restoreConnections'])->name('restore-connections');
         Route::get('/{client}', [ClientController::class, 'show'])->name('show');
         Route::post('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])->name('toggle-status');
         Route::post('/{client}/generate-bill', [ClientController::class, 'generateBill'])->name('generate-bill');
@@ -80,7 +83,13 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
         Route::post('/plans', [BillingController::class, 'storePlan'])->name('plans.store');
         Route::get('/invoices', [BillingController::class, 'invoices'])->name('invoices');
         Route::get('/payments', [BillingController::class, 'payments'])->name('payments');
+        Route::get('/payments/live-feed', [BillingController::class, 'liveTransactionsFeed'])->name('payments.live-feed');
+        Route::get('/payments/export', [BillingController::class, 'exportPaymentsCsv'])->name('payments.export');
         Route::post('/payments/stk-push', [BillingController::class, 'triggerStkPush'])->name('payments.stk-push');
+        Route::post('/payments/import-statement', [BillingController::class, 'importStatement'])->name('payments.import-statement');
+        Route::post('/payments/exceptions/{exception}/resolve', [BillingController::class, 'resolveException'])->name('payments.exceptions.resolve');
+        Route::post('/payments/activations/{job}/retry', [BillingController::class, 'retryActivation'])->name('payments.activations.retry');
+        Route::post('/payments/{payment}/reverse', [BillingController::class, 'reversePayment'])->name('payments.reverse');
         Route::get('/vouchers', [BillingController::class, 'vouchers'])->name('vouchers');
         Route::post('/vouchers/generate', [BillingController::class, 'generateVouchers'])->name('vouchers.generate');
         Route::get('/subscription', [BillingController::class, 'subscription'])->name('subscription');
@@ -157,7 +166,9 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     // Subscriber Self-Service Portal
     Route::prefix('portal')->name('client.')->group(function () {
         Route::get('/', [ClientPortalController::class, 'index'])->name('portal');
+        Route::get('/live-status', [ClientPortalController::class, 'liveStatus'])->name('live-status');
         Route::post('/pay-mpesa', [ClientPortalController::class, 'payMpesa'])->name('pay-mpesa');
+        Route::post('/submit-claim', [ClientPortalController::class, 'submitManualClaim'])->name('submit-claim');
         Route::post('/redeem-voucher', [ClientPortalController::class, 'redeemVoucher'])->name('redeem-voucher');
         Route::post('/ticket', [ClientPortalController::class, 'createTicket'])->name('create-ticket');
     });
@@ -178,6 +189,9 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
         Route::post('/mpesa', [GatewayController::class, 'storeMpesa'])->name('mpesa.store');
         Route::get('/manual', [GatewayController::class, 'manualGateways'])->name('manual');
         Route::post('/manual', [GatewayController::class, 'storeManual'])->name('manual.store');
+        Route::post('/{gateway}/toggle', [GatewayController::class, 'toggleGateway'])->name('toggle');
+        Route::put('/{gateway}', [GatewayController::class, 'updateGateway'])->name('update');
+        Route::delete('/{gateway}', [GatewayController::class, 'destroyGateway'])->name('destroy');
     });
 
     // 3. Communication Hub (WhatsApp, Dunning Reminders, SMS Gateways)

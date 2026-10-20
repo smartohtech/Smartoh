@@ -15,6 +15,7 @@ class TenantResolutionMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
+        app()->forgetInstance('current_tenant_id');
         $tenantId = null;
         $user = $request->user();
 

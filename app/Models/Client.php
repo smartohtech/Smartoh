@@ -13,9 +13,9 @@ class Client extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'site_id', 'mikrotik_device_id', 'billing_plan_id', 'reseller_id',
+        'tenant_id', 'site_id', 'fiber_box_id', 'mikrotik_device_id', 'billing_plan_id', 'reseller_id',
         'account_number', 'name', 'email', 'phone', 'id_passport_number',
-        'address', 'latitude', 'longitude', 'service_type',
+        'address', 'county', 'town', 'latitude', 'longitude', 'service_type',
         'pppoe_username', 'pppoe_password', 'assigned_ip', 'mac_address',
         'status', 'connection_status', 'wallet_balance', 'data_usage_bytes', 'current_cycle_start',
         'current_cycle_end', 'service_suspended_at', 'last_activated_at', 'auto_renew'

@@ -39,4 +39,27 @@ class SaasPlanVersion extends Model
     {
         return $this->hasMany(SaasSubscription::class);
     }
+
+    /**
+     * Unified limits & features accessor so views using ->limits or ->features
+     * both receive normalized quota keys and feature flags.
+     */
+    public function getLimitsAttribute(): array
+    {
+        $f = $this->features ?? [];
+
+        return array_merge($f, [
+            'subscribers'     => $f['max_subscribers'] ?? $f['subscribers'] ?? 300,
+            'max_subscribers' => $f['max_subscribers'] ?? $f['subscribers'] ?? 300,
+            'devices'         => $f['max_routers'] ?? $f['devices'] ?? 3,
+            'max_routers'     => $f['max_routers'] ?? $f['devices'] ?? 3,
+            'staff'           => $f['max_staff'] ?? $f['staff'] ?? 3,
+            'max_staff'       => $f['max_staff'] ?? $f['staff'] ?? 3,
+            'sites'           => $f['max_sites'] ?? $f['sites'] ?? 1,
+            'max_sites'       => $f['max_sites'] ?? $f['sites'] ?? 1,
+            'cpes'            => $f['max_cpes'] ?? $f['cpes'] ?? 100,
+            'max_cpes'        => $f['max_cpes'] ?? $f['cpes'] ?? 100,
+            'storage_gb'      => $f['storage_gb'] ?? 10,
+        ]);
+    }
 }

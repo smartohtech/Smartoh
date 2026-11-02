@@ -402,19 +402,38 @@ class BillingController extends Controller
     }
 
     /**
-     * Display the ISP Tenant's current SaaS subscription, 7-day trial status, and platform invoices.
+     * Display the ISP Tenant's current SaaS subscription, 7-day trial status,
+     * plan tier benefits, mid-cycle proration calculator, and platform invoices.
      * Strictly separate from ISP subscriber collections.
      */
-    public function subscription()
+    public function subscription(\App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
     {
-        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()->tenant_id;
-        $tenant = \App\Models\Tenant::findOrFail($tenantId);
+        \App\Models\SaasPlan::ensureDefaultPlansExist();
 
-        $subscription = $tenant->activeSubscription;
-        $plans = \App\Models\SaasPlan::where('is_active', true)->with('currentVersion')->get();
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? \App\Models\Tenant::find($tenantId) : null)
+            ?? auth()->user()?->tenant
+            ?? \App\Models\Tenant::first()
+            ?? \App\Models\Tenant::create(['name' => 'Smartoh Technologies', 'status' => 'active']);
+
+        $subscription = $lifecycle->ensureTenantHasSubscription($tenant);
+        $plans = \App\Models\SaasPlan::where('is_active', true)->with('currentVersion')->orderBy('sort_order')->get();
         $invoices = $tenant->saasInvoices()->with('items')->latest()->take(10)->get();
+        $changeRequests = $tenant->planChangeRequests()->with(['currentPlan', 'targetPlan', 'invoice'])->take(10)->get();
 
-        return view('billing.saas_subscription', compact('tenant', 'subscription', 'plans', 'invoices'));
+        $prorationPreviews = [];
+        foreach ($plans as $plan) {
+            $prorationPreviews[$plan->id] = $lifecycle->calculateTierProration($tenant, $plan);
+        }
+
+        return view('billing.saas_subscription', compact(
+            'tenant',
+            'subscription',
+            'plans',
+            'invoices',
+            'changeRequests',
+            'prorationPreviews'
+        ));
     }
 
     /**
@@ -429,13 +448,9 @@ class BillingController extends Controller
             'provider' => 'required|in:mpesa,bank_transfer,card,manual',
         ]);
 
-        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()->tenant_id;
-        $tenant = \App\Models\Tenant::findOrFail($tenantId);
-        $subscription = $tenant->activeSubscription;
-
-        if (!$subscription) {
-            return back()->with('error', 'No subscription found for this tenant.');
-        }
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? \App\Models\Tenant::find($tenantId) : null) ?? \App\Models\Tenant::firstOrFail();
+        $subscription = $lifecycle->ensureTenantHasSubscription($tenant);
 
         $ref = 'PAY-' . strtoupper(\Illuminate\Support\Str::random(8));
 
@@ -449,5 +464,135 @@ class BillingController extends Controller
         );
 
         return back()->with('success', "Payment of {$subscription->currency} " . number_format($subscription->amount) . " confirmed (Ref: {$ref})! Your subscription is now ACTIVE_PAID.");
+    }
+
+    /**
+     * Calculate and preview mid-cycle proration for upgrading or downgrading ISP SaaS tiers.
+     */
+    public function previewTierProration(Request $request, \App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
+    {
+        \App\Models\SaasPlan::ensureDefaultPlansExist();
+
+        $validated = $request->validate([
+            'target_plan_id'   => 'required|exists:saas_plans,id',
+            'billing_interval' => 'nullable|in:monthly,annually',
+            'remaining_days'   => 'nullable|integer|min:1|max:365',
+            'total_cycle_days' => 'nullable|integer|min:1|max:365',
+        ]);
+
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? \App\Models\Tenant::find($tenantId) : null) ?? \App\Models\Tenant::firstOrFail();
+        $targetPlan = \App\Models\SaasPlan::findOrFail($validated['target_plan_id']);
+
+        $calculation = $lifecycle->calculateTierProration(
+            $tenant,
+            $targetPlan,
+            $validated['billing_interval'] ?? null,
+            isset($validated['remaining_days']) ? (int) $validated['remaining_days'] : null,
+            isset($validated['total_cycle_days']) ? (int) $validated['total_cycle_days'] : null
+        );
+
+        if ($request->wantsJson()) {
+            return response()->json(['status' => 'ok', 'proration' => $calculation]);
+        }
+
+        $msg = $calculation['is_upgrade']
+            ? "Proration calculated for upgrade to {$calculation['target_plan_name']}: Amount to add for {$calculation['remaining_days']} remaining days is {$calculation['currency']} " . number_format($calculation['prorated_amount_to_add'], 2) . "."
+            : "Proration calculated for downgrade to {$calculation['target_plan_name']}: Credit carryover is {$calculation['currency']} " . number_format($calculation['credit_carryover'], 2) . ".";
+
+        return back()->with('tier_proration_result', $calculation)->with('success', $msg);
+    }
+
+    /**
+     * Submit an ISP Upgrade or Downgrade Request with mid-cycle proration.
+     */
+    public function requestTierChange(Request $request, \App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
+    {
+        \App\Models\SaasPlan::ensureDefaultPlansExist();
+
+        $validated = $request->validate([
+            'target_plan_id'   => 'required|exists:saas_plans,id',
+            'billing_interval' => 'nullable|in:monthly,annually',
+            'remaining_days'   => 'nullable|integer|min:1|max:365',
+            'total_cycle_days' => 'nullable|integer|min:1|max:365',
+            'effective_mode'   => 'nullable|in:immediate,end_of_cycle',
+            'payment_method'   => 'nullable|in:mpesa,bank_transfer,card,manual',
+            'pay_now'          => 'nullable|boolean',
+            'auto_approve'     => 'nullable|boolean',
+            'reason_notes'     => 'nullable|string|max:1000',
+        ]);
+
+        $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
+        $tenant = ($tenantId ? \App\Models\Tenant::find($tenantId) : null) ?? \App\Models\Tenant::firstOrFail();
+        $targetPlan = \App\Models\SaasPlan::findOrFail($validated['target_plan_id']);
+
+        $changeRequest = $lifecycle->submitPlanChangeRequest(
+            $tenant,
+            $targetPlan,
+            $request->user(),
+            $validated
+        );
+
+        if ($changeRequest->status === \App\Models\SaasPlanChangeRequest::STATUS_COMPLETED) {
+            return back()
+                ->with('last_plan_change_request', $changeRequest)
+                ->with('success', "Tier {$changeRequest->change_type} to '{$targetPlan->name}' completed! (Ref: {$changeRequest->reference_number}, Prorated Top-Up: {$changeRequest->currency} " . number_format($changeRequest->prorated_amount_to_add, 2) . ").");
+        }
+
+        if ($changeRequest->isUpgrade()) {
+            return back()
+                ->with('last_plan_change_request', $changeRequest)
+                ->with('success', "Upgrade request #{$changeRequest->reference_number} to '{$targetPlan->name}' created! Prorated amount to add for the remaining {$changeRequest->remaining_days} days: {$changeRequest->currency} " . number_format($changeRequest->prorated_amount_to_add, 2) . " (Unused credit deducted: {$changeRequest->currency} " . number_format($changeRequest->unused_credit, 2) . ").");
+        }
+
+        return back()
+            ->with('last_plan_change_request', $changeRequest)
+            ->with('success', "Downgrade request #{$changeRequest->reference_number} to '{$targetPlan->name}' submitted! Prorated credit carryover calculated: {$changeRequest->currency} " . number_format($changeRequest->credit_carryover, 2) . ".");
+    }
+
+    /**
+     * Pay the prorated top-up amount for a pending upgrade request and activate the higher tier.
+     */
+    public function payTierUpgradeRequest(
+        Request $request,
+        \App\Models\SaasPlanChangeRequest $changeRequest,
+        \App\Services\SaaS\SubscriptionLifecycleService $lifecycle
+    ) {
+        $validated = $request->validate([
+            'provider' => 'nullable|in:mpesa,bank_transfer,card,manual',
+            'phone'    => 'nullable|string|max:30',
+        ]);
+
+        $user = $request->user();
+        if (!$user->isSuperAdmin() && $changeRequest->tenant_id !== $user->tenant_id) {
+            abort(403, 'Unauthorized tenant plan upgrade payment.');
+        }
+
+        $provider = $validated['provider'] ?? $changeRequest->payment_method ?? 'mpesa';
+        $ref = 'UPG-PAY-' . strtoupper(\Illuminate\Support\Str::random(6));
+
+        $lifecycle->payAndCompleteUpgradeRequest($changeRequest, $provider, $ref, $user);
+
+        return back()->with('success', "Prorated upgrade top-up of {$changeRequest->currency} " . number_format($changeRequest->prorated_amount_to_add, 2) . " paid (Ref: {$ref})! Your ISP tier is now upgraded to {$changeRequest->targetPlan->name}.");
+    }
+
+    /**
+     * Cancel a pending ISP tier upgrade/downgrade request.
+     */
+    public function cancelTierChangeRequest(Request $request, \App\Models\SaasPlanChangeRequest $changeRequest)
+    {
+        $user = $request->user();
+        if (!$user->isSuperAdmin() && $changeRequest->tenant_id !== $user->tenant_id) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        if ($changeRequest->isPending()) {
+            $changeRequest->update(['status' => \App\Models\SaasPlanChangeRequest::STATUS_CANCELLED]);
+            if ($changeRequest->invoice && $changeRequest->invoice->status === 'pending') {
+                $changeRequest->invoice->update(['status' => 'void']);
+            }
+        }
+
+        return back()->with('success', "Plan change request {$changeRequest->reference_number} has been cancelled.");
     }
 }

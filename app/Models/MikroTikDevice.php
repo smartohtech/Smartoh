@@ -13,7 +13,7 @@ class MikroTikDevice extends Model
     protected $table = 'mikrotik_devices';
 
     protected $fillable = [
-        'tenant_id', 'site_id', 'name', 'ip_address', 'api_port',
+        'tenant_id', 'site_id', 'name', 'ip_address', 'latitude', 'longitude', 'county', 'api_port',
         'api_username', 'api_password_encrypted', 'use_ssl', 'model',
         'routeros_version', 'identity', 'is_online', 'cpu_load',
         'free_memory_bytes', 'total_memory_bytes', 'uptime_seconds',

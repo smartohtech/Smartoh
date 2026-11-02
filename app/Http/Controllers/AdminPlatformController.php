@@ -154,14 +154,41 @@ class AdminPlatformController extends Controller
     /**
      * Subscription & System Quotas (Parity view for /admin/system-plan & /SystemPlan)
      */
-    public function systemPlan()
+    public function systemPlan(\App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
     {
+        \App\Models\SaasPlan::ensureDefaultPlansExist();
+
         $tenantId = app()->bound('current_tenant_id') ? app('current_tenant_id') : auth()->user()?->tenant_id;
         $tenant = ($tenantId ? Tenant::find($tenantId) : null)
             ?? auth()->user()?->tenant
             ?? Tenant::first()
             ?? Tenant::create(['name' => 'Smartoh Technologies', 'status' => 'active']);
 
-        return view('admin.system_plan', compact('tenant'));
+        $subscription = $lifecycle->ensureTenantHasSubscription($tenant);
+        $plans = \App\Models\SaasPlan::where('is_active', true)->with('currentVersion')->orderBy('sort_order')->get();
+        $changeRequests = $tenant->planChangeRequests()->with(['currentPlan', 'targetPlan', 'invoice'])->take(10)->get();
+
+        $prorationPreviews = [];
+        foreach ($plans as $plan) {
+            $prorationPreviews[$plan->id] = $lifecycle->calculateTierProration($tenant, $plan);
+        }
+
+        return view('admin.system_plan', compact(
+            'tenant',
+            'subscription',
+            'plans',
+            'changeRequests',
+            'prorationPreviews'
+        ));
+    }
+
+    public function previewSystemPlanProration(Request $request, \App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
+    {
+        return app(BillingController::class)->previewTierProration($request, $lifecycle);
+    }
+
+    public function requestSystemPlanChange(Request $request, \App\Services\SaaS\SubscriptionLifecycleService $lifecycle)
+    {
+        return app(BillingController::class)->requestTierChange($request, $lifecycle);
     }
 }

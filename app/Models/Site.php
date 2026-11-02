@@ -11,7 +11,7 @@ class Site extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'name', 'code', 'location', 'latitude', 'longitude',
+        'tenant_id', 'name', 'code', 'location', 'county', 'town', 'latitude', 'longitude',
         'bank_account_name', 'bank_account_number', 'mpesa_paybill', 'mpesa_till',
         'invoice_prefix', 'receipt_prefix', 'next_invoice_number'
     ];

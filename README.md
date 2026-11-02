@@ -82,3 +82,47 @@ To roll back the real-time non-custodial schema additions safely without losing 
 ```bash
 php artisan migrate:rollback --step=1
 ```
+
+---
+
+## 7. Kenya Network Map & GIS Fiber Infrastructure (`EPSG:4326` / `WGS 84`)
+
+### 7.1 Authoritative Geographic Datasets & Licensing
+- **Coordinate Reference System (CRS)**: `EPSG:4326` (`WGS 84` decimal degrees), bounded to the Republic of Kenya (`Latitude -4.80°S to +5.20°N`, `Longitude 33.85°E to 42.00°E`).
+- **Kenya 47 Constitutional Counties & National Boundary (`KenyaGeospatialService`)**:
+  - **Source**: Independent Electoral and Boundaries Commission (IEBC) / Kenya National Bureau of Statistics (KNBS) / Humanitarian Data Exchange (`HDX COD-AB-KEN` Administrative Boundaries).
+  - **License**: Creative Commons Attribution for Intergovernmental Organizations (`CC BY-IGO 3.0`) / Open Government Data Kenya.
+  - **Update Date**: 2024-10 (aligned with the 47 Counties under the First Schedule of the Constitution of Kenya, County Codes `001` Mombasa through `047` Nairobi).
+- **Major Towns, Estates & National Trunk Highway Corridors (`A104-A109`, `A2`, `B1`, `B8`)**:
+  - **Source**: Kenya National Highways Authority (KeNHA) / Survey of Kenya Gazetteer & OpenStreetMap Kenya contributors (`ODbL 1.0`).
+- **Map Tiles & Geocoding Service**:
+  - **Default Basemap Tiles**: OpenStreetMap (`ODbL 1.0`), CARTO Basemaps (`CC BY 4.0`), and OpenTopoMap (`CC-BY-SA 3.0`).
+  - **Geocoding Proxy**: Server-side cached and rate-limited proxy (`GET /gis/search`) querying the local Kenya 47-County Gazetteer first and falling back to Nominatim (`countrycodes=ke`) with mandatory `User-Agent`, 72-hour response caching, and rate limiting (`30 req/min`) to prevent scraping or overloading public servers. For high-volume commercial production deployments, configure a commercial tile/geocoding endpoint (MapTiler, Stadia Maps, or self-hosted Nominatim/TileServer-GL) via `.env`.
+
+### 7.2 Environment Configuration (`.env`)
+No private API keys are ever hardcoded in frontend code. Configure tile and geocoding providers in `.env`:
+```dotenv
+GIS_MAP_DEFAULT_LAT=0.0236
+GIS_MAP_DEFAULT_LNG=37.9062
+GIS_MAP_DEFAULT_ZOOM=6
+GIS_MAP_MIN_ZOOM=5
+GIS_MAP_MAX_ZOOM=19
+GIS_MAP_TILE_STREET_URL="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+GIS_MAP_TILE_DARK_URL="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+GIS_MAP_TILE_TOPO_URL="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+GIS_MAP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors &copy; CARTO"
+GIS_GEOCODER_URL="https://nominatim.openstreetmap.org/search"
+GIS_GEOCODER_COUNTRY="ke"
+GIS_GEOCODER_USER_AGENT="SmartohISPBillingGIS/2.0 (noc@smartoh.co.ke)"
+GIS_GEOCODER_CACHE_HOURS=72
+GIS_GEOCODER_RATE_LIMIT=30
+```
+
+### 7.3 Multitenant GIS Authorization & Audited Support Workflow
+- **ISP Tenant Isolation**: Each ISP (`isp_admin`, `technician`, `billing_officer`) can only view, search, filter, or manage its own private network infrastructure (`FiberInfrastructure`, `Site`, `MikroTikDevice`, `OLTDevice`, `Client` drops, and `InstallationJob` work orders).
+- **Role-Based Access Control (RBAC)**:
+  - `isp_admin`: Create, edit, move, delete, and export GeoJSON (`GET /gis/export`).
+  - `technician`: Create, edit, and move assets and complete field work orders.
+  - `billing_officer`: Read-only access to the tenant's GIS map.
+  - `client`: Forbidden (`403`) from internal ISP infrastructure maps.
+- **Super Admin Audited Support Workflow**: Super Admin defaults to a **Platform Overview** of Kenya and can only inspect a specific tenant's private GIS assets after submitting an explicit support ticket/reason via `POST /gis/support-access` (logged to `audit_logs` as `gis.support_access.granted` and revocable via `POST /gis/support-access/revoke`).

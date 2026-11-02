@@ -70,6 +70,8 @@ class AuthController extends Controller
             return redirect()->route('dashboard');
         }
 
+        SaasPlan::ensureDefaultPlansExist();
+
         $plans = SaasPlan::where('is_active', true)->with('currentVersion')->orderBy('sort_order')->get();
         $selectedPlanSlug = $request->query('plan', 'pro');
 

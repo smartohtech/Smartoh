@@ -9,9 +9,68 @@
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
             <h1 class="text-xl sm:text-2xl font-extrabold text-white tracking-tight">SaaS Subscriptions &amp; Trial Timers</h1>
-            <p class="text-xs text-slate-400 mt-1">Autonomous 12-state subscription lifecycle engine tracking 7-day trials, grace periods, and paid renewals.</p>
+            <p class="text-xs text-slate-400 mt-1">Autonomous 12-state subscription lifecycle engine tracking 7-day trials, grace periods, mid-cycle proration upgrades, and paid renewals.</p>
         </div>
     </div>
+
+    <!-- Pending ISP Tier Upgrade / Downgrade Requests -->
+    @if(isset($pendingChangeRequests) && $pendingChangeRequests->isNotEmpty())
+    <div class="bg-slate-900/90 border border-cyan-500/40 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h2 class="text-sm font-bold text-white flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span>Pending ISP Tier Upgrade / Downgrade Requests ({{ $pendingChangeRequests->count() }})</span>
+            </h2>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+                <thead class="text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                    <tr>
+                        <th class="py-2.5 px-3">Ref #</th>
+                        <th class="py-2.5 px-3">ISP Tenant</th>
+                        <th class="py-2.5 px-3">Transition</th>
+                        <th class="py-2.5 px-3">Remaining Days</th>
+                        <th class="py-2.5 px-3">Prorated Adjustment</th>
+                        <th class="py-2.5 px-3">Status</th>
+                        <th class="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    @foreach($pendingChangeRequests as $req)
+                    <tr>
+                        <td class="py-2.5 px-3 font-bold text-cyan-400">{{ $req->reference_number }}</td>
+                        <td class="py-2.5 px-3 text-white font-sans font-bold">{{ $req->tenant->name ?? 'ISP' }}</td>
+                        <td class="py-2.5 px-3">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] uppercase {{ $req->isUpgrade() ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300' }}">{{ $req->change_type }}</span>
+                            <span class="text-slate-300 ml-1">{{ $req->currentPlan->name ?? 'Old' }} &rarr; <strong class="text-white">{{ $req->targetPlan->name ?? 'New' }}</strong></span>
+                        </td>
+                        <td class="py-2.5 px-3 text-slate-300">{{ $req->remaining_days }}/{{ $req->total_cycle_days }}d</td>
+                        <td class="py-2.5 px-3">
+                            @if($req->isUpgrade())
+                                <span class="text-emerald-400 font-bold">+{{ $req->currency }} {{ number_format($req->prorated_amount_to_add, 2) }} to add</span>
+                            @else
+                                <span class="text-amber-400 font-bold">{{ $req->currency }} {{ number_format($req->credit_carryover, 2) }} credit</span>
+                            @endif
+                        </td>
+                        <td class="py-2.5 px-3">
+                            <span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300">{{ $req->status }}</span>
+                        </td>
+                        <td class="py-2.5 px-3 text-right">
+                            <form method="POST" action="{{ route('platform.subscriptions.change-requests.approve', $req) }}" class="inline">
+                                @csrf
+                                <button type="submit" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-sans font-bold transition">
+                                    Approve &amp; Apply
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
 
     <!-- Filters Strip -->
     <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">

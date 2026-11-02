@@ -16,6 +16,8 @@ class PublicMarketingController extends Controller
 
     public function pricing()
     {
+        SaasPlan::ensureDefaultPlansExist();
+
         $plans = SaasPlan::where('is_active', true)
             ->with('currentVersion')
             ->orderBy('sort_order')

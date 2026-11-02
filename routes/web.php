@@ -94,6 +94,10 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
         Route::post('/vouchers/generate', [BillingController::class, 'generateVouchers'])->name('vouchers.generate');
         Route::get('/subscription', [BillingController::class, 'subscription'])->name('subscription');
         Route::post('/subscription/pay', [BillingController::class, 'paySubscription'])->name('subscription.pay');
+        Route::post('/subscription/proration-preview', [BillingController::class, 'previewTierProration'])->name('subscription.proration-preview');
+        Route::post('/subscription/change-tier', [BillingController::class, 'requestTierChange'])->name('subscription.change-tier');
+        Route::post('/subscription/change-requests/{changeRequest}/pay', [BillingController::class, 'payTierUpgradeRequest'])->name('subscription.change-requests.pay');
+        Route::post('/subscription/change-requests/{changeRequest}/cancel', [BillingController::class, 'cancelTierChangeRequest'])->name('subscription.change-requests.cancel');
     });
 
     // Network & MikroTik Core
@@ -139,6 +143,14 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
     // GIS Fiber & Field Operations
     Route::prefix('gis')->name('gis.')->group(function () {
         Route::get('/map', [GisController::class, 'map'])->name('map');
+        Route::get('/kenya-geojson', [GisController::class, 'kenyaGeoJson'])->name('kenya-geojson');
+        Route::get('/search', [GisController::class, 'search'])->name('search');
+        Route::get('/export', [GisController::class, 'exportAssets'])->name('export');
+        Route::post('/assets', [GisController::class, 'storeAsset'])->name('assets.store');
+        Route::put('/assets/{asset}', [GisController::class, 'updateAsset'])->name('assets.update');
+        Route::delete('/assets/{asset}', [GisController::class, 'destroyAsset'])->name('assets.destroy');
+        Route::post('/support-access', [GisController::class, 'grantSupportAccess'])->name('support.grant');
+        Route::post('/support-access/revoke', [GisController::class, 'revokeSupportAccess'])->name('support.revoke');
         Route::get('/jobs', [GisController::class, 'jobs'])->name('jobs');
         Route::post('/jobs', [GisController::class, 'storeJob'])->name('jobs.store');
         Route::post('/jobs/{job}/complete', [GisController::class, 'completeJob'])->name('jobs.complete');
@@ -250,6 +262,8 @@ Route::middleware(['auth', 'enforce_subscription'])->group(function () {
         Route::get('/proration', [AdminPlatformController::class, 'proration'])->name('proration');
         Route::post('/proration/calculate', [AdminPlatformController::class, 'calculateProration'])->name('proration.calculate');
         Route::get('/system-plan', [AdminPlatformController::class, 'systemPlan'])->name('system-plan');
+        Route::post('/system-plan/proration-preview', [AdminPlatformController::class, 'previewSystemPlanProration'])->name('system-plan.proration-preview');
+        Route::post('/system-plan/change-tier', [AdminPlatformController::class, 'requestSystemPlanChange'])->name('system-plan.change-tier');
 
         // Restricted Super Admin Paths under /admin
         Route::any('/tenants/{any?}', fn() => abort(403, 'Restricted to Platform Super Administrators.'))->where('any', '.*');
@@ -315,6 +329,8 @@ Route::prefix('platform')->name('platform.')->middleware(['auth', 'super_admin']
         Route::post('/{subscription}/update-status', [PlatformSubscriptionController::class, 'updateStatus'])->name('update-status');
         Route::post('/{subscription}/extend-trial', [PlatformSubscriptionController::class, 'extendTrial'])->name('extend-trial');
         Route::post('/{subscription}/invoice', [PlatformSubscriptionController::class, 'generateInvoice'])->name('invoice');
+        Route::post('/change-requests/{changeRequest}/approve', [PlatformSubscriptionController::class, 'approvePlanChangeRequest'])->name('change-requests.approve');
+        Route::post('/change-requests/{changeRequest}/reject', [PlatformSubscriptionController::class, 'rejectPlanChangeRequest'])->name('change-requests.reject');
     });
 
     // 5. Invoices & Payment Gateway Reconciliation

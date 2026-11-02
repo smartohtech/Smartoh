@@ -8,6 +8,7 @@ use App\Models\SaasInvoice;
 use App\Models\SaasInvoiceItem;
 use App\Models\SaasPayment;
 use App\Models\SaasPlan;
+use App\Models\SaasPlanChangeRequest;
 use App\Models\SaasPlanVersion;
 use App\Models\SaasSubscription;
 use App\Models\Tenant;
@@ -486,5 +487,392 @@ class SubscriptionLifecycleService
             'details'   => "Tenant {$tenant->name} reinstated to active status by {$adminUser->name}.",
             'ip_address'=> request()->ip() ?? '127.0.0.1',
         ]);
+    }
+
+    /**
+     * Ensure the tenant has an active SaaS subscription linked to their current tier.
+     */
+    public function ensureTenantHasSubscription(Tenant $tenant): SaasSubscription
+    {
+        SaasPlan::ensureDefaultPlansExist();
+
+        $subscription = $tenant->activeSubscription()->with(['plan', 'planVersion'])->first();
+        if ($subscription && $subscription->plan) {
+            return $subscription;
+        }
+
+        $tierSlug = strtolower($tenant->subscription_tier ?: 'starter');
+        $plan = SaasPlan::where('slug', $tierSlug)->with('currentVersion')->first()
+            ?? SaasPlan::where('slug', 'starter')->with('currentVersion')->first()
+            ?? SaasPlan::with('currentVersion')->first();
+
+        $version = $plan->currentVersion ?? $plan->versions()->first();
+
+        $subscription = SaasSubscription::create([
+            'tenant_id'            => $tenant->id,
+            'saas_plan_id'         => $plan->id,
+            'saas_plan_version_id' => $version->id,
+            'status'               => SaasSubscription::STATUS_ACTIVE_PAID,
+            'billing_interval'     => 'monthly',
+            'amount'               => $plan->monthly_price,
+            'currency'             => $plan->currency ?? 'KES',
+            'current_period_start' => Carbon::now()->subDays(12),
+            'current_period_end'   => Carbon::now()->addDays(18),
+            'custom_limits'        => $version->features,
+        ]);
+
+        return $subscription->load(['plan', 'planVersion']);
+    }
+
+    /**
+     * Calculate exact mid-cycle proration when an ISP requests to upgrade or downgrade
+     * from an existing tier to a target tier.
+     */
+    public function calculateTierProration(
+        Tenant $tenant,
+        SaasPlan $targetPlan,
+        ?string $billingInterval = null,
+        ?int $overrideRemainingDays = null,
+        ?int $overrideTotalDays = null
+    ): array {
+        $subscription = $this->ensureTenantHasSubscription($tenant);
+        $currentPlan = $subscription->plan ?? SaasPlan::where('slug', $tenant->subscription_tier ?: 'starter')->first() ?? $targetPlan;
+
+        $interval = $billingInterval ?: ($subscription->billing_interval ?: 'monthly');
+        $defaultCycleDays = $interval === 'annually' ? 365 : 30;
+
+        if ($overrideTotalDays !== null && $overrideTotalDays > 0) {
+            $totalDays = $overrideTotalDays;
+        } elseif ($subscription->current_period_start && $subscription->current_period_end) {
+            $diffTotal = (int) round($subscription->current_period_start->diffInDays($subscription->current_period_end));
+            $totalDays = $diffTotal >= 7 ? $diffTotal : $defaultCycleDays;
+        } else {
+            $totalDays = $defaultCycleDays;
+        }
+
+        if ($overrideRemainingDays !== null && $overrideRemainingDays >= 0) {
+            $remainingDays = min($totalDays, max(1, $overrideRemainingDays));
+        } elseif ($subscription->current_period_end && Carbon::now()->lessThan($subscription->current_period_end)) {
+            $hoursLeft = max(1, Carbon::now()->diffInHours($subscription->current_period_end, false));
+            $remainingDays = min($totalDays, max(1, (int) ceil($hoursLeft / 24)));
+        } else {
+            $remainingDays = $totalDays;
+        }
+
+        $currentPlanRate = $interval === 'annually'
+            ? (float) $currentPlan->annual_price
+            : (float) $currentPlan->monthly_price;
+
+        // If the subscription has a custom/negotiated amount in the same interval, respect it
+        if ($subscription->billing_interval === $interval && (float) $subscription->amount > 0 && $subscription->saas_plan_id === $currentPlan->id) {
+            $currentPlanRate = (float) $subscription->amount;
+        }
+
+        $targetPlanRate = $interval === 'annually'
+            ? (float) $targetPlan->annual_price
+            : (float) $targetPlan->monthly_price;
+
+        $dailyCurrentRate = round($currentPlanRate / $totalDays, 2);
+        $dailyTargetRate  = round($targetPlanRate / $totalDays, 2);
+
+        $unusedCredit      = round(($currentPlanRate / $totalDays) * $remainingDays, 2);
+        $proratedNewCharge = round(($targetPlanRate / $totalDays) * $remainingDays, 2);
+        $netDifference     = round($proratedNewCharge - $unusedCredit, 2);
+
+        $isSamePlan  = ($currentPlan->id === $targetPlan->id) && ($subscription->billing_interval === $interval);
+        $isUpgrade   = !$isSamePlan && ($targetPlanRate > $currentPlanRate || ($targetPlanRate == $currentPlanRate && $targetPlan->sort_order > $currentPlan->sort_order));
+        $isDowngrade = !$isSamePlan && !$isUpgrade;
+
+        $changeType = $isUpgrade ? 'upgrade' : ($isDowngrade ? 'downgrade' : 'switch');
+        $proratedAmountToAdd = $isUpgrade ? max(0.0, $netDifference) : 0.0;
+        $creditCarryover     = $isDowngrade ? abs(min(0.0, $netDifference)) : 0.0;
+
+        return [
+            'subscription_id'        => $subscription->id,
+            'current_plan_id'        => $currentPlan->id,
+            'current_plan_name'      => $currentPlan->name,
+            'current_plan_slug'      => $currentPlan->slug,
+            'current_plan_rate'      => $currentPlanRate,
+            'target_plan_id'         => $targetPlan->id,
+            'target_plan_name'       => $targetPlan->name,
+            'target_plan_slug'       => $targetPlan->slug,
+            'target_plan_rate'       => $targetPlanRate,
+            'billing_interval'       => $interval,
+            'total_cycle_days'       => $totalDays,
+            'remaining_days'         => $remainingDays,
+            'daily_current_rate'     => $dailyCurrentRate,
+            'daily_target_rate'      => $dailyTargetRate,
+            'unused_credit'          => $unusedCredit,
+            'prorated_new_charge'    => $proratedNewCharge,
+            'net_difference'         => $netDifference,
+            'prorated_amount_to_add' => $proratedAmountToAdd,
+            'credit_carryover'       => $creditCarryover,
+            'is_upgrade'             => $isUpgrade,
+            'is_downgrade'           => $isDowngrade,
+            'is_same_plan'           => $isSamePlan,
+            'change_type'            => $changeType,
+            'currency'               => $targetPlan->currency ?? 'KES',
+        ];
+    }
+
+    /**
+     * Create an ISP Upgrade or Downgrade Request with mid-cycle proration calculation,
+     * generating a prorated top-up invoice for upgrades and optionally processing immediate activation.
+     */
+    public function submitPlanChangeRequest(
+        Tenant $tenant,
+        SaasPlan $targetPlan,
+        ?User $user = null,
+        array $options = []
+    ): SaasPlanChangeRequest {
+        return DB::transaction(function () use ($tenant, $targetPlan, $user, $options) {
+            $interval = $options['billing_interval'] ?? null;
+            $remainingDays = isset($options['remaining_days']) ? (int) $options['remaining_days'] : null;
+            $totalDays = isset($options['total_cycle_days']) ? (int) $options['total_cycle_days'] : null;
+
+            $calc = $this->calculateTierProration($tenant, $targetPlan, $interval, $remainingDays, $totalDays);
+
+            // Cancel any previous pending change requests for this tenant
+            SaasPlanChangeRequest::where('tenant_id', $tenant->id)
+                ->whereIn('status', [
+                    SaasPlanChangeRequest::STATUS_PENDING_REVIEW,
+                    SaasPlanChangeRequest::STATUS_PENDING_PAYMENT,
+                ])
+                ->update(['status' => SaasPlanChangeRequest::STATUS_CANCELLED]);
+
+            $ref = 'PCR-' . date('Ym') . '-' . strtoupper(Str::random(5));
+            $effectiveMode = $options['effective_mode'] ?? ($calc['is_upgrade'] ? 'immediate' : 'end_of_cycle');
+            $paymentMethod = $options['payment_method'] ?? 'mpesa';
+            $payNow = !empty($options['pay_now']);
+            $autoApprove = !empty($options['auto_approve']);
+
+            $invoice = null;
+            if ($calc['is_upgrade'] && $calc['prorated_amount_to_add'] > 0) {
+                $subscription = SaasSubscription::find($calc['subscription_id']);
+                $periodEnd = $subscription?->current_period_end ?? Carbon::now()->addDays($calc['remaining_days']);
+
+                $invoice = SaasInvoice::create([
+                    'invoice_number'       => 'SINV-UPG-' . strtoupper(Str::random(6)),
+                    'tenant_id'            => $tenant->id,
+                    'subscription_id'      => $calc['subscription_id'],
+                    'subtotal'             => $calc['prorated_amount_to_add'],
+                    'tax'                  => 0,
+                    'total'                => $calc['prorated_amount_to_add'],
+                    'currency'             => $calc['currency'],
+                    'status'               => 'pending',
+                    'billing_period_start' => Carbon::now()->toDateString(),
+                    'billing_period_end'   => $periodEnd->toDateString(),
+                    'due_date'             => Carbon::now()->addDays(3)->toDateString(),
+                    'notes'                => "Mid-Cycle Tier Upgrade Proration: {$calc['current_plan_name']} -> {$calc['target_plan_name']} ({$calc['remaining_days']}/{$calc['total_cycle_days']} days remaining)",
+                ]);
+
+                SaasInvoiceItem::create([
+                    'saas_invoice_id' => $invoice->id,
+                    'description'     => "Prorated Target Tier ({$calc['target_plan_name']}) for {$calc['remaining_days']} remaining days",
+                    'quantity'        => 1,
+                    'unit_price'      => $calc['prorated_new_charge'],
+                    'total'           => $calc['prorated_new_charge'],
+                ]);
+
+                SaasInvoiceItem::create([
+                    'saas_invoice_id' => $invoice->id,
+                    'description'     => "Less: Unused Credit from Current Tier ({$calc['current_plan_name']}) for {$calc['remaining_days']} days",
+                    'quantity'        => 1,
+                    'unit_price'      => -$calc['unused_credit'],
+                    'total'           => -$calc['unused_credit'],
+                ]);
+            }
+
+            $initialStatus = $calc['is_upgrade']
+                ? ($calc['prorated_amount_to_add'] > 0 ? SaasPlanChangeRequest::STATUS_PENDING_PAYMENT : SaasPlanChangeRequest::STATUS_PENDING_REVIEW)
+                : SaasPlanChangeRequest::STATUS_PENDING_REVIEW;
+
+            $changeRequest = SaasPlanChangeRequest::create([
+                'reference_number'       => $ref,
+                'tenant_id'              => $tenant->id,
+                'subscription_id'        => $calc['subscription_id'],
+                'requested_by_user_id'   => $user?->id,
+                'current_plan_id'        => $calc['current_plan_id'],
+                'target_plan_id'         => $calc['target_plan_id'],
+                'change_type'            => $calc['change_type'],
+                'billing_interval'       => $calc['billing_interval'],
+                'total_cycle_days'       => $calc['total_cycle_days'],
+                'remaining_days'         => $calc['remaining_days'],
+                'current_plan_rate'      => $calc['current_plan_rate'],
+                'target_plan_rate'       => $calc['target_plan_rate'],
+                'unused_credit'          => $calc['unused_credit'],
+                'prorated_new_charge'    => $calc['prorated_new_charge'],
+                'prorated_amount_to_add' => $calc['prorated_amount_to_add'],
+                'credit_carryover'       => $calc['credit_carryover'],
+                'currency'               => $calc['currency'],
+                'effective_mode'         => $effectiveMode,
+                'payment_method'         => $paymentMethod,
+                'saas_invoice_id'        => $invoice?->id,
+                'status'                 => $initialStatus,
+                'reason_notes'           => $options['reason_notes'] ?? null,
+            ]);
+
+            AuditLog::create([
+                'user_id'    => $user?->id,
+                'tenant_id'  => $tenant->id,
+                'action'     => 'ISP_PLAN_' . strtoupper($calc['change_type']) . '_REQUESTED',
+                'details'    => "ISP {$tenant->name} requested {$calc['change_type']} from {$calc['current_plan_name']} to {$calc['target_plan_name']} (Ref: {$ref}). Prorated amount to add: {$calc['currency']} {$calc['prorated_amount_to_add']} (Unused credit: {$calc['unused_credit']}, New charge: {$calc['prorated_new_charge']} for {$calc['remaining_days']}/{$calc['total_cycle_days']} days).",
+                'ip_address' => request()->ip() ?? '127.0.0.1',
+            ]);
+
+            // If user opted to pay prorated upgrade amount immediately or auto-apply
+            if ($payNow && $calc['is_upgrade']) {
+                $payRef = $options['payment_reference'] ?? ('UPG-' . strtoupper(Str::random(8)));
+                $this->payAndCompleteUpgradeRequest($changeRequest, $paymentMethod, $payRef, $user);
+            } elseif ($autoApprove) {
+                $this->applyPlanChangeRequest($changeRequest, $user, 'Auto-applied per ISP tier preference.');
+            }
+
+            return $changeRequest->fresh(['currentPlan', 'targetPlan', 'invoice']);
+        });
+    }
+
+    /**
+     * Record prorated top-up payment for an upgrade request and immediately activate the higher tier.
+     */
+    public function payAndCompleteUpgradeRequest(
+        SaasPlanChangeRequest $changeRequest,
+        string $provider = 'mpesa',
+        ?string $reference = null,
+        ?User $user = null
+    ): SaasSubscription {
+        return DB::transaction(function () use ($changeRequest, $provider, $reference, $user) {
+            $reference = $reference ?: ('UPG-' . strtoupper(Str::random(8)));
+            $amountToPay = (float) $changeRequest->prorated_amount_to_add;
+
+            if ($amountToPay > 0) {
+                $invoice = $changeRequest->invoice;
+                if (!$invoice) {
+                    $invoice = SaasInvoice::create([
+                        'invoice_number'       => 'SINV-UPG-' . strtoupper(Str::random(6)),
+                        'tenant_id'            => $changeRequest->tenant_id,
+                        'subscription_id'      => $changeRequest->subscription_id,
+                        'subtotal'             => $amountToPay,
+                        'tax'                  => 0,
+                        'total'                => $amountToPay,
+                        'currency'             => $changeRequest->currency,
+                        'status'               => 'paid',
+                        'billing_period_start' => Carbon::now()->toDateString(),
+                        'billing_period_end'   => Carbon::now()->addDays($changeRequest->remaining_days)->toDateString(),
+                        'due_date'             => Carbon::now()->toDateString(),
+                        'paid_at'              => Carbon::now(),
+                        'payment_method'       => $provider,
+                        'notes'                => "Prorated Upgrade Top-Up ({$changeRequest->reference_number})",
+                    ]);
+                    $changeRequest->update(['saas_invoice_id' => $invoice->id]);
+                } else {
+                    $invoice->update([
+                        'status'         => 'paid',
+                        'paid_at'        => Carbon::now(),
+                        'payment_method' => $provider,
+                    ]);
+                }
+
+                SaasPayment::create([
+                    'saas_invoice_id'     => $invoice->id,
+                    'tenant_id'           => $changeRequest->tenant_id,
+                    'payment_reference'   => $reference,
+                    'provider'            => $provider,
+                    'amount'              => $amountToPay,
+                    'currency'            => $changeRequest->currency,
+                    'status'              => 'completed',
+                    'paid_at'             => Carbon::now(),
+                    'notes'               => "Mid-cycle upgrade proration top-up ({$changeRequest->reference_number})",
+                    'recorded_by_user_id' => $user?->id,
+                ]);
+            }
+
+            $changeRequest->update([
+                'payment_method'    => $provider,
+                'payment_reference' => $reference,
+            ]);
+
+            return $this->applyPlanChangeRequest(
+                $changeRequest,
+                $user,
+                "Prorated upgrade top-up of {$changeRequest->currency} " . number_format($amountToPay, 2) . " paid via " . strtoupper($provider) . " (Ref: {$reference})."
+            );
+        });
+    }
+
+    /**
+     * Apply an upgrade or downgrade request to the tenant's SaaS subscription & resource quotas.
+     */
+    public function applyPlanChangeRequest(
+        SaasPlanChangeRequest $changeRequest,
+        ?User $actor = null,
+        ?string $adminNotes = null
+    ): SaasSubscription {
+        return DB::transaction(function () use ($changeRequest, $actor, $adminNotes) {
+            $tenant = $changeRequest->tenant;
+            $targetPlan = $changeRequest->targetPlan()->with('currentVersion')->first();
+            $targetVersion = $targetPlan->currentVersion ?? $targetPlan->versions()->first();
+            $features = $targetVersion->features ?? [];
+
+            $subscription = $changeRequest->subscription ?? $this->ensureTenantHasSubscription($tenant);
+
+            $newAmount = $changeRequest->billing_interval === 'annually'
+                ? $targetPlan->annual_price
+                : $targetPlan->monthly_price;
+
+            $newStatus = $changeRequest->isUpgrade() && (float) $changeRequest->prorated_amount_to_add > 0
+                ? SaasSubscription::STATUS_ACTIVE_PAID
+                : ($subscription->status ?: SaasSubscription::STATUS_ACTIVE_PAID);
+
+            $subscription->update([
+                'saas_plan_id'         => $targetPlan->id,
+                'saas_plan_version_id' => $targetVersion->id,
+                'billing_interval'     => $changeRequest->billing_interval,
+                'amount'               => $newAmount,
+                'currency'             => $targetPlan->currency ?? 'KES',
+                'status'               => $newStatus,
+                'custom_limits'        => $features,
+            ]);
+
+            $tenantSettings = $tenant->settings ?? [];
+            if ($changeRequest->credit_carryover > 0) {
+                $tenantSettings['saas_credit_balance'] = round(($tenantSettings['saas_credit_balance'] ?? 0) + (float) $changeRequest->credit_carryover, 2);
+            }
+            $tenantSettings['last_plan_change_ref'] = $changeRequest->reference_number;
+            $tenantSettings['last_plan_changed_at'] = Carbon::now()->toIso8601String();
+
+            $tenant->update([
+                'subscription_tier' => $targetPlan->slug,
+                'max_routers'       => (int) ($features['max_routers'] ?? 10),
+                'max_clients'       => (int) ($features['max_subscribers'] ?? 1000),
+                'settings'          => $tenantSettings,
+            ]);
+
+            $changeRequest->update([
+                'status'              => SaasPlanChangeRequest::STATUS_COMPLETED,
+                'admin_notes'         => $adminNotes ?? $changeRequest->admin_notes,
+                'reviewed_by_user_id' => $actor?->id ?? $changeRequest->reviewed_by_user_id,
+                'reviewed_at'         => Carbon::now(),
+                'applied_at'          => Carbon::now(),
+            ]);
+
+            TrialEvent::create([
+                'tenant_id'       => $tenant->id,
+                'subscription_id' => $subscription->id,
+                'event_type'      => 'plan_' . $changeRequest->change_type,
+                'recorded_at'     => Carbon::now(),
+                'notes'           => ucfirst($changeRequest->change_type) . " applied to {$targetPlan->name} (Ref: {$changeRequest->reference_number}). " . ($adminNotes ?? ''),
+            ]);
+
+            AuditLog::create([
+                'user_id'    => $actor?->id,
+                'tenant_id'  => $tenant->id,
+                'action'     => 'ISP_PLAN_' . strtoupper($changeRequest->change_type) . '_APPLIED',
+                'details'    => "Applied {$changeRequest->change_type} for {$tenant->name} to {$targetPlan->name} ({$changeRequest->reference_number}). New quotas: {$features['max_subscribers']} subscribers, {$features['max_routers']} routers.",
+                'ip_address' => request()->ip() ?? '127.0.0.1',
+            ]);
+
+            return $subscription->fresh(['plan', 'planVersion']);
+        });
     }
 }

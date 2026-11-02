@@ -126,20 +126,37 @@
 
                     <!-- Plan Selection Grid -->
                     <div class="pt-2">
-                        <label class="block font-medium text-slate-300 mb-2">Select Target SaaS Subscription Plan *</label>
+                        <label class="block font-medium text-slate-300 mb-2">Select Target SaaS Subscription Plan &amp; Benefit Level *</label>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             @foreach($plans as $plan)
-                            @php $checked = (old('saas_plan_id') == $plan->id || (!old('saas_plan_id') && $plan->slug === $selectedPlanSlug)); @endphp
-                            <label class="p-3.5 bg-slate-950 border rounded-2xl cursor-pointer transition flex flex-col justify-between space-y-2 {{ $checked ? 'border-cyan-500 bg-cyan-950/20' : 'border-slate-800 hover:border-slate-700' }}">
-                                <div class="flex items-center justify-between">
-                                    <span class="font-bold text-white text-xs">{{ $plan->name }}</span>
-                                    <input type="radio" name="saas_plan_id" value="{{ $plan->id }}" {{ $checked ? 'checked' : '' }} class="text-cyan-600 focus:ring-0">
+                            @php
+                                $checked = (old('saas_plan_id') == $plan->id || (!old('saas_plan_id') && $plan->slug === $selectedPlanSlug));
+                                $pFeatures = $plan->currentVersion?->features ?? [];
+                                $pBenefits = array_slice($plan->includedBenefits(), 0, 4);
+                            @endphp
+                            <label class="p-3.5 bg-slate-950 border rounded-2xl cursor-pointer transition flex flex-col justify-between space-y-2.5 {{ $checked ? 'border-cyan-500 bg-cyan-950/20 ring-1 ring-cyan-500/40' : 'border-slate-800 hover:border-slate-700' }}">
+                                <div class="space-y-1.5">
+                                    <div class="flex items-center justify-between">
+                                        <span class="font-bold text-white text-xs">{{ $plan->name }}</span>
+                                        <input type="radio" name="saas_plan_id" value="{{ $plan->id }}" {{ $checked ? 'checked' : '' }} class="text-cyan-600 focus:ring-0">
+                                    </div>
+                                    <div class="font-mono text-cyan-400 font-extrabold text-sm">
+                                        {{ $plan->currency }} {{ number_format($plan->monthly_price) }}<span class="text-[10px] text-slate-500 font-normal">/mo</span>
+                                    </div>
+                                    <div class="text-[10px] text-emerald-400 font-mono">
+                                        {{ $pFeatures['tier_badge'] ?? ($plan->trial_days . '-Day Free Trial') }}
+                                    </div>
+                                    <ul class="space-y-1 pt-1 border-t border-slate-800/80 text-[10px] text-slate-300">
+                                        @foreach($pBenefits as $benefitItem)
+                                            <li class="flex items-start gap-1">
+                                                <span class="text-cyan-400">✓</span>
+                                                <span>{{ $benefitItem }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
                                 </div>
-                                <div class="font-mono text-cyan-400 font-extrabold text-sm">
-                                    {{ $plan->currency }} {{ number_format($plan->monthly_price) }}<span class="text-[10px] text-slate-500 font-normal">/mo</span>
-                                </div>
-                                <div class="text-[10px] text-slate-400 font-mono">
-                                    {{ $plan->trial_days }}-Day Free Trial
+                                <div class="text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
+                                    {{ $plan->trial_days }}-Day Free Trial • Prorated Upgrades
                                 </div>
                             </label>
                             @endforeach

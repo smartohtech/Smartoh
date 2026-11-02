@@ -79,6 +79,11 @@ class SaasSubscription extends Model
         return $this->hasMany(SaasInvoice::class, 'subscription_id')->latest('created_at');
     }
 
+    public function planChangeRequests(): HasMany
+    {
+        return $this->hasMany(SaasPlanChangeRequest::class, 'subscription_id')->latest('created_at');
+    }
+
     public function isTrial(): bool
     {
         return in_array($this->status, [

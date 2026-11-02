@@ -14,7 +14,7 @@ class OLTDevice extends Model
     protected $table = 'olt_devices';
 
     protected $fillable = [
-        'tenant_id', 'site_id', 'name', 'vendor', 'ip_address',
+        'tenant_id', 'site_id', 'name', 'vendor', 'ip_address', 'latitude', 'longitude', 'county',
         'api_url', 'api_token_encrypted', 'snmp_community',
         'pon_ports_count', 'registered_onus_count', 'is_online'
     ];

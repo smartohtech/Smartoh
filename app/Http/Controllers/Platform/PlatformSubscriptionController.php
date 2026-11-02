@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Platform;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\SaasPlan;
+use App\Models\SaasPlanChangeRequest;
 use App\Models\SaasSubscription;
 use App\Models\TrialEvent;
 use App\Services\SaaS\SubscriptionLifecycleService;
@@ -15,6 +16,8 @@ class PlatformSubscriptionController extends Controller
 {
     public function index(Request $request)
     {
+        SaasPlan::ensureDefaultPlansExist();
+
         $query = SaasSubscription::with(['tenant', 'plan', 'planVersion'])->latest();
 
         if ($search = $request->input('search')) {
@@ -34,8 +37,15 @@ class PlatformSubscriptionController extends Controller
 
         $subscriptions = $query->paginate(15)->withQueryString();
         $plans = SaasPlan::all();
+        $pendingChangeRequests = SaasPlanChangeRequest::with(['tenant', 'currentPlan', 'targetPlan', 'invoice'])
+            ->whereIn('status', [
+                SaasPlanChangeRequest::STATUS_PENDING_REVIEW,
+                SaasPlanChangeRequest::STATUS_PENDING_PAYMENT,
+            ])
+            ->latest()
+            ->get();
 
-        return view('platform.subscriptions.index', compact('subscriptions', 'plans'));
+        return view('platform.subscriptions.index', compact('subscriptions', 'plans', 'pendingChangeRequests'));
     }
 
     public function show(SaasSubscription $subscription)
@@ -46,6 +56,9 @@ class PlatformSubscriptionController extends Controller
             'planVersion',
             'trialEvents',
             'invoices.payments',
+            'planChangeRequests.currentPlan',
+            'planChangeRequests.targetPlan',
+            'planChangeRequests.invoice',
         ]);
 
         $plans = SaasPlan::where('is_active', true)->get();
@@ -132,5 +145,51 @@ class PlatformSubscriptionController extends Controller
         $invoice = $lifecycle->generateRenewalInvoice($subscription);
 
         return back()->with('success', "Invoice {$invoice->invoice_number} created for KES " . number_format($invoice->total, 2));
+    }
+
+    public function approvePlanChangeRequest(
+        Request $request,
+        SaasPlanChangeRequest $changeRequest,
+        SubscriptionLifecycleService $lifecycle
+    ) {
+        $validated = $request->validate([
+            'admin_notes' => 'nullable|string|max:500',
+        ]);
+
+        $lifecycle->applyPlanChangeRequest(
+            $changeRequest,
+            $request->user(),
+            $validated['admin_notes'] ?? 'Approved by Platform Super Admin.'
+        );
+
+        return back()->with('success', "Approved and applied {$changeRequest->change_type} request {$changeRequest->reference_number} for {$changeRequest->tenant->name} to {$changeRequest->targetPlan->name}.");
+    }
+
+    public function rejectPlanChangeRequest(Request $request, SaasPlanChangeRequest $changeRequest)
+    {
+        $validated = $request->validate([
+            'admin_notes' => 'required|string|max:500',
+        ]);
+
+        $changeRequest->update([
+            'status'              => SaasPlanChangeRequest::STATUS_REJECTED,
+            'admin_notes'         => $validated['admin_notes'],
+            'reviewed_by_user_id' => $request->user()->id,
+            'reviewed_at'         => Carbon::now(),
+        ]);
+
+        if ($changeRequest->invoice && $changeRequest->invoice->status === 'pending') {
+            $changeRequest->invoice->update(['status' => 'void']);
+        }
+
+        AuditLog::create([
+            'user_id'    => $request->user()->id,
+            'tenant_id'  => $changeRequest->tenant_id,
+            'action'     => 'ISP_PLAN_CHANGE_REJECTED',
+            'details'    => "Rejected {$changeRequest->change_type} request {$changeRequest->reference_number} for {$changeRequest->tenant->name}. Reason: {$validated['admin_notes']}",
+            'ip_address' => $request->ip() ?? '127.0.0.1',
+        ]);
+
+        return back()->with('success', "Plan change request {$changeRequest->reference_number} rejected.");
     }
 }

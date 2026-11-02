@@ -23,11 +23,22 @@ class Tenant extends Model
         'logo_url',
         'theme_mode',
         'subscription_tier',
+        'plan_tier',
         'status',
         'max_routers',
         'max_clients',
         'settings',
     ];
+
+    public function getPlanTierAttribute(): ?string
+    {
+        return $this->attributes['subscription_tier'] ?? 'starter';
+    }
+
+    public function setPlanTierAttribute($value): void
+    {
+        $this->attributes['subscription_tier'] = $value;
+    }
 
     protected $casts = [
         'settings' => 'array',
@@ -113,6 +124,11 @@ class Tenant extends Model
     public function saasInvoices(): HasMany
     {
         return $this->hasMany(SaasInvoice::class)->latest('created_at');
+    }
+
+    public function planChangeRequests(): HasMany
+    {
+        return $this->hasMany(SaasPlanChangeRequest::class)->latest('created_at');
     }
 
     public function usage(): HasOne

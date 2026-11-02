@@ -277,6 +277,14 @@
                     <span>ISP Approvals</span>
                 </a>
                 @endif
+                <a href="{{ route('admin.system-plan') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.system-plan') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
+                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                    <span>ISP Plan &amp; Tier Preferences</span>
+                </a>
+                <a href="{{ route('billing.subscription') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('billing.subscription') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
+                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                    <span>SaaS Subscription &amp; Proration</span>
+                </a>
                 <a href="{{ route('admin.user-approvals') }}" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 {{ request()->routeIs('admin.user-approvals') ? 'text-blue-600 dark:text-blue-400 font-semibold' : '' }}">
                     <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
                     <span>Staff Role Approvals</span>

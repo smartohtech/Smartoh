@@ -11,7 +11,12 @@ $_ENV['SERVICES_CACHE'] = '/tmp/storage/framework/services.php';
 $_ENV['PACKAGES_CACHE'] = '/tmp/storage/framework/packages.php';
 
 // 3. Create the temporary storage directories if they don't exist
-if (!is_dir('/tmp/storage/framework/views')) {
-    mkdir('/tmp/storage/framework/views', 0755, true)
+if (!is_dir('/tmp/storage')) {
+    exec('rm -rf /tmp/storage');
 }
+
+mkdir('/tmp/storage/framework/views', 0755, true);
+mkdir('/tmp/storage/framework/sessions', 0755, true);
+mkdir('/tmp/storage/framework/cache', 0755, true);
+
 require __DIR__ . '/../public/index.php';
